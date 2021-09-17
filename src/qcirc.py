@@ -7,6 +7,8 @@ from qiskit.circuit import QuantumCircuit
 from qiskit.transpiler import CouplingMap, PassManager
 from qiskit.transpiler.passes import *
 from qiskit.compiler import transpile
+from qiskit.visualization import plot_histogram
+from qiskit import Aer
 
 from csolvswap import ConvexSolverSwap
 
@@ -22,12 +24,14 @@ G_QISKIT_OPT_HEAVIER = 3
 G_QISKIT_OPT_LVL = G_QISKIT_OPT_HEAVY  
 G_QISKIT_GATE_SET = ['u1', 'u2', 'u3', 'cx']
 
+BACKEND = Aer.get_backend('qasm_simulator')
+
 def draw(circ):
 	print(circ.draw(output='text'))
 
 def _bench_and_cmp(ref_circ, coupling_map, pm1, pm2, runs=100):
 	swaps, max_swaps, min_swaps = 0.0, None, None
-	time, max_time, min_time, mean_t1, mean_t2 = 0.0, None, None, 0.0, 0.0
+	mean_t1, mean_t2 = 0.0, 0.0
 	for _ in range(runs):
 		# Benchmark first pass.
 		start = timer()
@@ -40,30 +44,24 @@ def _bench_and_cmp(ref_circ, coupling_map, pm1, pm2, runs=100):
 		end = timer()
 		time2 = end - start
 		# Update sats
-		t = (time1 - time2) 
 		s = (circ1.size() - circ2.size())
-		time += t / runs
 		swaps += s / runs
 		mean_t1 += time1 / runs
 		mean_t2 += time2 / runs
 		if max_swaps is None:
 			max_swaps = s
 			min_swaps = s
-			max_time = t
-			min_time = t
 		else:
 			if s > max_swaps:
 				max_swaps = s
 			elif s < min_swaps:
 				min_swaps = s
-			if t > max_time:
-				max_time = t
-			elif t < min_time:
-				min_time = t
 	if runs == 1:
-		draw(circ1)
-		draw(circ2)
-	return swaps, max_swaps, min_swaps, time, max_time, min_time, mean_t1, mean_t2
+		for circ in [ref_circ, circ1, circ2]:
+			res = BACKEND.run(circ, shots=1024).result()
+			print(res.get_counts(circ))	
+			draw(circ)
+	return swaps, max_swaps, min_swaps, mean_t1, mean_t2
 
 if __name__ == '__main__':
 	n, m, s = 2, 5, 5
@@ -74,12 +72,14 @@ if __name__ == '__main__':
 	trivial_layout_pass = TrivialLayout(coupling_map)
 
 	sabre_routing_pass = SabreSwap(coupling_map)
+	sabre_mapping_pass = SabreLayout(coupling_map, routing_pass=None)
 	csolv_routing_pass = ConvexSolverSwap(coupling_map, max_swaps=s)
 
-	ipass_list = [basis_pass, trivial_layout_pass] 
+	ipass_list = [basis_pass] 
 	fpass_list = [basis_pass]
 
 	pass_list1, pass_list2 = ipass_list.copy(), ipass_list.copy()
+	pass_list1.append(sabre_mapping_pass)
 	pass_list1.append(sabre_routing_pass)
 	pass_list2.append(csolv_routing_pass)
 
