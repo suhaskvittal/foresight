@@ -14,9 +14,7 @@ import numpy as np
 
 DEBUG = 1
 
-R_SKIP_TH = 0.3
-
-# TODO Folding function
+R_SKIP_TH = 0.5
 
 class ConvexSolverSwap(TransformationPass):
 	def __init__(self, coupling_map, seed=None, max_swaps=5, max_runs=1000, edge_weights=None):
@@ -34,7 +32,13 @@ class ConvexSolverSwap(TransformationPass):
 		front_layer = dag.front_layer()
 		finished = set()
 		while front_layer:
-			output_layers, next_layout = self._insert_swaps(current_layout, front_layer)
+			second_layer_set = set()
+			for node in front_layer:
+				for child in dag.descendants(node):
+					second_layer_set.add(child)
+			second_layer = list(second_layer_set)
+				
+			output_layers, next_layout = self._insert_swaps(current_layout, front_layer, next_layer=second_layer)
 			for layer in output_layers:
 				for node in layer:
 					mapped_dag.apply_operation_back(node.op, qargs=node.qargs, cargs=node.cargs)
@@ -60,10 +64,14 @@ class ConvexSolverSwap(TransformationPass):
 											cargs=measure_op.cargs)
 		return mapped_dag
 
-	def _insert_swaps(self, current_layout, front_layer):
-		output_layers = [[] for _ in range(3*self.max_swaps+1)]
+	def _insert_swaps(self, current_layout, front_layer, next_layer=None):
+		if next_layer is None:
+			next_layer = []
+
+		output_layers = [[] for _ in range(self.max_swaps+1)]
 
 		target_set = []
+		next_target_set = []
 		for gnode in front_layer:
 			if gnode.type != 'op' or gnode.name == 'measure':
 				continue
@@ -75,6 +83,12 @@ class ConvexSolverSwap(TransformationPass):
 					output_layers[0].append(gnode)
 				else:
 					target_set.append((v0, v1))			
+		for gnode in next_layer:
+			if gnode.type != 'op' or gnode.name == 'measure' or len(gnode.qargs) != 2:
+				continue  # Do not update output layer
+			else:
+				v0, v1 = gnode.qargs
+				next_target_set.append((v0, v1))
 		if len(target_set) == 0:
 			return [output_layers[0]], current_layout
 		lp, var_mapping = self._build_lp(current_layout, target_set)
@@ -91,17 +105,18 @@ class ConvexSolverSwap(TransformationPass):
 			path_dag[i].append((e, value(var_mapping[(i,e)]))) 	
 		# Greedily choose edges at each layer.
 		soln_layers = []
-		layer_used_sets = []
 
 		best_soln_layers = []
-		best_layer_used_sets = []
 		best_soln_size = -1
+		best_next_dist = -1
 		for _ in range(self.max_runs):
 			soln_layers = []
 			layer_used_sets = []
 			soln_size = 0
+			swap_score_list = []
 			for i in range(self.max_swaps):
 				curr_layer = []	
+				layer_score_list = []
 				used = set()  # Keep track of used vertices to avoid choosing bad edges.
 				if i > 0:
 					prev_used = layer_used_sets[-1]
@@ -109,7 +124,7 @@ class ConvexSolverSwap(TransformationPass):
 					prev_used = None
 				candidate_list = path_dag[i]
 				candidate_list.sort(key=lambda x: x[1], reverse=True)
-				for ((v, w), _) in candidate_list:
+				for (j, ((v, w), s)) in enumerate(candidate_list):
 					if np.random.random() <= R_SKIP_TH:
 						continue
 					if v in used or w in used:
@@ -123,23 +138,37 @@ class ConvexSolverSwap(TransformationPass):
 					soln_size += 1
 					used.add(v)
 					used.add(w)
+					layer_score_list.append(j)
 				soln_layers.append(curr_layer)
 				layer_used_sets.append(used)
-			soln_layers = self._fold_layers(soln_layers, layer_used_sets)
+				swap_score_list.append(layer_score_list)
+			soln_layers, next_dist = self._fold_layers(soln_layers, current_layout,\
+														next_target_set=next_target_set)
+			soln_layers = self._clean_layers(soln_layers)
 			if self._verify_swaps(soln_layers, target_set, current_layout)\
 			and (\
-				(soln_size < best_soln_size or best_soln_size == -1)\
-				or (soln_size == best_soln_size\
-					and len(soln_layers) < len(best_soln_layers))\
-				):	
+			#	(soln_size < best_soln_size or best_soln_size == -1)\
+			#	or (soln_size == best_soln_size\
+			#		and (next_dist < best_next_dist or best_next_dist == -1)\
+			#		)\
+			#	(next_dist < best_next_dist or best_next_dist == -1)\
+			#	or (next_dist == best_next_dist\
+			#		and (soln_size < best_soln_size or best_soln_size == -1)\
+			#		)\
+				soln_size + next_dist <= best_soln_size + best_next_dist\
+				or best_soln_size == -1
+				):
 				best_soln_layers = soln_layers
-				best_layer_used_sets = layer_used_sets
 				best_soln_size = soln_size
+				best_next_dist = next_dist
+			else:
+				# Reduce scores of edges in path.
+				for (i, score_layer) in enumerate(swap_score_list):
+					for j in score_layer:
+						(v, w), s = path_dag[i][j]
+						path_dag[i][j] = (v, w), 0.5*s
 		soln_layers = best_soln_layers
-		layer_used_sets = best_layer_used_sets
 				
-		# Finally, try to reduce the depth of the circuit by folding the layers.
-		soln_layers = self._clean_layers(soln_layers)
 		# Add SWAPs to output_layers.
 		new_layout = current_layout.copy()
 		for i in range(len(soln_layers)):
@@ -147,24 +176,14 @@ class ConvexSolverSwap(TransformationPass):
 			for (p0, p1) in layer:
 				# Add CNOT gates to output layer
 				v0, v1 = new_layout[p0], new_layout[p1]
-				cx_gate1 = DAGNode(
+				if (v0, v1) in target_set or (v1, v0) in target_set:
+					continue
+				swp_gate = DAGNode(
 					type='op',
-					op=CXGate(),
+					op=SwapGate(),
 					qargs=[v0, v1]	
 				)
-				cx_gate2= DAGNode(
-					type='op',
-					op=CXGate(),
-					qargs=[v1, v0]	
-				)
-				cx_gate3 = DAGNode(
-					type='op',
-					op=CXGate(),
-					qargs=[v0, v1]	
-				)
-				output_layers[3*i].append(cx_gate1)
-				output_layers[3*i+1].append(cx_gate2)
-				output_layers[3*i+2].append(cx_gate3)
+				output_layers[i].append(swp_gate)
 				# Apply sp1ap to modify running layout.
 				new_layout[p0], new_layout[p1] = new_layout[p1], new_layout[p0]
 		# Apply original operations.
@@ -174,27 +193,50 @@ class ConvexSolverSwap(TransformationPass):
 				op=CXGate(), 
 				qargs=[v0, v1]
 			)	
-			output_layers[3*i+3].append(cx_gate)
+			output_layers[i+1].append(cx_gate)
 		return output_layers, new_layout
 
-	def _fold_layers(self, layers, layer_usage_list):	
-		prev_folds = set()
-		for i in range(1, self.max_swaps//2):
-			layer = layers[-i]
-			folds = set()
-			removed_indices = []
-			for (j, (v, w)) in enumerate(layer):
-				if i > 0 and not (v in prev_folds or w in prev_folds):
-					continue  # Cannot fold this edge.
-				if v not in layer_usage_list[i] and w not in layer_usage_list[i]:
-					folds.add(v)
-					folds.add(w)
-					layers[i].append((v, w))
-					removed_indices.append(j)
-			layers[-i] = [x for (j,x) in enumerate(layers[-i]) if j not in removed_indices] 
-			prev_folds = folds
-		return layers
-	
+	def _fold_layers(self, layers, current_layout, next_target_set=None):	
+		if next_target_set is None or len(next_target_set) == 0:
+			return layers, 0
+		# Choose a fold such that we minimize the distance to the next targets.
+		min_d_index = 0
+		min_dist = -1
+		for i in range(self.max_swaps):  # Compute point of minimum distance -- that will be the fold point.
+			test_layout = current_layout.copy()
+			# Perform reverse swaps
+			j = 0
+			while j < i:
+				layer = layers[j]
+				for (p0, p1) in layer:
+					test_layout[p0], test_layout[p1] = test_layout[p1], test_layout[p0]
+				j += 1
+			j = self.max_swaps - 1
+			while j >= i:
+				layer = layers[j]
+				for (p0, p1) in layer:
+					test_layout[p0], test_layout[p1] = test_layout[p1], test_layout[p0]
+				j -= 1
+			# After test layout is completed, compute cumulative distance.
+			dist = sum(self.coupling_map.distance_matrix[test_layout[v0], test_layout[v1]]\
+							for (v0, v1) in next_target_set)
+			if min_dist < 0 or dist < min_dist:
+				min_dist = dist
+				min_d_index = i
+		# Once we compute the min_d_index, we fold the layers.
+		if min_d_index == 0:
+			return layers[::-1], min_dist  # Return reverse of current layers.
+		elif min_d_index == self.max_swaps - 1:
+			return layers, min_dist  # This is just the current order.
+		else:
+			left_tree = layers[:min_d_index]
+			right_tree = layers[min_d_index:][::-1]
+			folded_tree = []
+			# We can be lazy and not fold :) Just do [left_tree, right_tree]
+			folded_tree.extend(left_tree)
+			folded_tree.extend(right_tree)
+			return folded_tree, min_dist
+
 	def _clean_layers(self, layers):
 		removed_layers = []
 		for i in range(self.max_swaps):
@@ -225,7 +267,7 @@ class ConvexSolverSwap(TransformationPass):
 					target_set_indicator[(v1, v0)] = 1
 		return all(target_set_indicator[x] == 1 for x in target_set)
 
-	def _build_lp(self, current_layout, target_set, next_target_set=None):
+	def _build_lp(self, current_layout, target_set):
 		conjunctions = []	
 		for (v0, v1) in target_set:
 			p0, p1 = current_layout[v0], current_layout[v1]
@@ -275,7 +317,10 @@ class ConvexSolverSwap(TransformationPass):
 				prev_cpy = prev.copy()
 				if len(prev) > 0 and (prev[-1] == (v, w) or prev[-1] == (w, v)):
 					continue
+				if depth - len(prev_cpy) < self.coupling_map.distance_matrix[w, sink]:  # too far.
+					continue
 				if w == sink:
+					prev_cpy.append((v, w))
 					while len(prev_cpy) < depth:
 						prev_cpy.append((w, w))
 					path_list.append(prev_cpy)

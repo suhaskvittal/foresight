@@ -41,7 +41,7 @@ def _bench_and_cmp(ref_circ, coupling_map, pm1, pm2, runs=100):
 		time2 = end - start
 		# Update sats
 		t = (time1 - time2) 
-		s = (circ1.size() - circ2.size()) / 3
+		s = (circ1.size() - circ2.size())
 		time += t / runs
 		swaps += s / runs
 		mean_t1 += time1 / runs
@@ -66,8 +66,8 @@ def _bench_and_cmp(ref_circ, coupling_map, pm1, pm2, runs=100):
 	return swaps, max_swaps, min_swaps, time, max_time, min_time, mean_t1, mean_t2
 
 if __name__ == '__main__':
-	n, m, s = 3, 5, 6
-	circ = QuantumCircuit.from_qasm_file('benchmarks/BV-15.qasm') 
+	n, m, s = 2, 5, 5
+	circ = QuantumCircuit.from_qasm_file('benchmarks/BV-10.qasm') 
 	coupling_map = CouplingMap.from_grid(n, m)
 
 	basis_pass = Unroller(G_QISKIT_GATE_SET)
@@ -83,8 +83,8 @@ if __name__ == '__main__':
 	pass_list1.append(sabre_routing_pass)
 	pass_list2.append(csolv_routing_pass)
 
-	pass_list1.extend(fpass_list)
-	pass_list2.extend(fpass_list)
+#	pass_list1.extend(fpass_list)
+#	pass_list2.extend(fpass_list)
 
 	pm1 = PassManager(pass_list1)
 	pm2 = PassManager(pass_list2)
