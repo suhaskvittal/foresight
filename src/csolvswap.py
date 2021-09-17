@@ -17,7 +17,6 @@ DEBUG = 1
 R_SKIP_TH = 0.3
 
 # TODO Folding function
-# TODO Lookahead support
 
 class ConvexSolverSwap(TransformationPass):
 	def __init__(self, coupling_map, seed=None, max_swaps=5, max_runs=1000, edge_weights=None):
@@ -126,8 +125,13 @@ class ConvexSolverSwap(TransformationPass):
 					used.add(w)
 				soln_layers.append(curr_layer)
 				layer_used_sets.append(used)
+			soln_layers = self._fold_layers(soln_layers, layer_used_sets)
 			if self._verify_swaps(soln_layers, target_set, current_layout)\
-			and (soln_size < best_soln_size or best_soln_size == -1):	
+			and (\
+				(soln_size < best_soln_size or best_soln_size == -1)\
+				or (soln_size == best_soln_size\
+					and len(soln_layers) < len(best_soln_layers))\
+				):	
 				best_soln_layers = soln_layers
 				best_layer_used_sets = layer_used_sets
 				best_soln_size = soln_size
@@ -135,7 +139,6 @@ class ConvexSolverSwap(TransformationPass):
 		layer_used_sets = best_layer_used_sets
 				
 		# Finally, try to reduce the depth of the circuit by folding the layers.
-		#soln_layers = self._clean_layers(self._fold_layers(soln_layers, layer_used_sets))
 		soln_layers = self._clean_layers(soln_layers)
 		# Add SWAPs to output_layers.
 		new_layout = current_layout.copy()
@@ -181,13 +184,14 @@ class ConvexSolverSwap(TransformationPass):
 			folds = set()
 			removed_indices = []
 			for (j, (v, w)) in enumerate(layer):
-				if i > 0 and (v in prev_folds or w in prev_folds):
+				if i > 0 and not (v in prev_folds or w in prev_folds):
 					continue  # Cannot fold this edge.
 				if v not in layer_usage_list[i] and w not in layer_usage_list[i]:
 					folds.add(v)
 					folds.add(w)
+					layers[i].append((v, w))
 					removed_indices.append(j)
-			layers[-i] = [x for (j,x) in layers[-i] if j not in removed_indices] 
+			layers[-i] = [x for (j,x) in enumerate(layers[-i]) if j not in removed_indices] 
 			prev_folds = folds
 		return layers
 	
