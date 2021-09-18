@@ -157,27 +157,22 @@ class ConvexSolverSwap(TransformationPass):
 														next_target_set=next_target_set)
 			soln_layers = self._clean_layers(soln_layers)
 			score_modify = 0.5
-			if self._verify_swaps(soln_layers, target_set, current_layout)\
-			and (\
-			#	(soln_size < best_soln_size or best_soln_size == -1)\
-			#	or (soln_size == best_soln_size\
-			#		and (next_dist < best_next_dist or best_next_dist == -1)\
-			#		)\
-			#	(next_dist < best_next_dist or best_next_dist == -1)\
-			#	or (next_dist == best_next_dist\
-			#		and (soln_size < best_soln_size or best_soln_size == -1)\
-			#		)\
-				soln_size + next_dist <= best_soln_size + best_next_dist\
-				or best_soln_size == -1\
-			):
-				best_soln_layers = soln_layers
-				best_soln_size = soln_size
-				best_next_dist = next_dist
+			if self._verify_swaps(soln_layers, target_set, current_layout):
+				if soln_size + next_dist < best_soln_size + best_next_dist\
+				or best_soln_size == -1:
+					best_soln_layers = soln_layers
+					best_soln_size = soln_size
+					best_next_dist = next_dist
+					score_modify = 1
+#				else:
+#					if soln_size + next_dist == best_soln_size + best_next_dist\
+#					and self._soln_hash_f(soln_layers) != self._soln_hash_f(best_soln_layers):
+#						print('equally good candidate found,', self._soln_hash_f(soln_layers), self._soln_hash_f(best_soln_layers))
 			# Modify scores of edges in path.
 			for (i, score_layer) in enumerate(swap_score_list):
 				for j in score_layer:
 					(v, w), s = path_dag[i][j]
-					path_dag[i][j] = (v, w), score_modify*s
+					path_dag[i][j] = (v, w), (score_modify*np.random.random()+score_modify)*s
 		soln_layers = best_soln_layers
 		if len(soln_layers) == 0:
 			print('[ERROR] Empty solution.')
@@ -346,3 +341,11 @@ class ConvexSolverSwap(TransformationPass):
 				queue.append((w, prev_cpy))
 		return path_list
 
+	def _soln_hash_f(self, soln):
+		h = 0
+		PRIME = 766453 
+		for layer in soln:
+			for (p0, p1) in layer:
+				h += ((2**p0)*(3**p1)) % PRIME
+		return h	
+		
