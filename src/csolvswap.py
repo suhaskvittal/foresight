@@ -245,6 +245,45 @@ class ConvexSolverSwap(TransformationPass):
 			folded_tree.extend(left_tree)
 			folded_tree.extend(right_tree)
 			return folded_tree, min_dist
+		if next_target_set is None or len(next_target_set) == 0:
+			return layers, 0
+		# Choose a fold such that we minimize the distance to the next targets.
+		min_d_index = 0
+		min_dist = -1
+		for i in range(self.max_swaps):  # Compute point of minimum distance -- that will be the fold point.
+			test_layout = current_layout.copy()
+			# Perform reverse swaps
+			j = 0
+			while j < i:
+				layer = layers[j]
+				for (p0, p1) in layer:
+					test_layout[p0], test_layout[p1] = test_layout[p1], test_layout[p0]
+				j += 1
+			j = self.max_swaps - 1
+			while j >= i:
+				layer = layers[j]
+				for (p0, p1) in layer:
+					test_layout[p0], test_layout[p1] = test_layout[p1], test_layout[p0]
+				j -= 1
+			# After test layout is completed, compute cumulative distance.
+			dist = sum(self.coupling_map.distance_matrix[test_layout[v0], test_layout[v1]]\
+							for (v0, v1) in next_target_set)
+			if min_dist < 0 or dist < min_dist:
+				min_dist = dist
+				min_d_index = i
+		# Once we compute the min_d_index, we fold the layers.
+		if min_d_index == 0:
+			return layers[::-1], min_dist  # Return reverse of current layers.
+		elif min_d_index == self.max_swaps - 1:
+			return layers, min_dist  # This is just the current order.
+		else:
+			left_tree = layers[:min_d_index]
+			right_tree = layers[min_d_index:][::-1]
+			folded_tree = []
+			# We can be lazy and not fold :) Just do [left_tree, right_tree]
+			folded_tree.extend(left_tree)
+			folded_tree.extend(right_tree)
+			return folded_tree, min_dist
 
 	def _clean_layers(self, layers):
 		removed_layers = []

@@ -11,6 +11,7 @@ from qiskit.visualization import plot_histogram
 from qiskit import Aer
 
 from csolvswap import ConvexSolverSwap
+from mpathswap import MultipathSwap
 
 from timeit import default_timer as timer
 
@@ -58,26 +59,28 @@ def _bench_and_cmp(ref_circ, coupling_map, pm1, pm2, runs=100):
 				min_swaps = s
 	if runs == 1:
 		for circ in [ref_circ, circ1, circ2]:
-#			res = BACKEND.run(circ, shots=1024).result()
-#			print(res.get_counts(circ))	
+			res = BACKEND.run(circ, shots=1024).result()
+			print(res.get_counts(circ))	
 			draw(circ)
 	return swaps, max_swaps, min_swaps, mean_t1, mean_t2
 
 if __name__ == '__main__':
-	n, m, s = 2, 5, 5
+	n, m = 2, 5
+	s = 7
 	circ = QuantumCircuit.from_qasm_file('benchmarks/BV-10.qasm') 
 	coupling_map = CouplingMap.from_grid(n, m)
 
 	basis_pass = Unroller(G_QISKIT_GATE_SET)
 	trivial_layout_pass = TrivialLayout(coupling_map)
 	gate1q_pass = Optimize1qGates()
+	gatecx_pass = CXCancellation()
 
 	sabre_routing_pass = SabreSwap(coupling_map)
 	sabre_mapping_pass = SabreLayout(coupling_map, routing_pass=None)
-	csolv_routing_pass = ConvexSolverSwap(coupling_map, max_swaps=s)
+	csolv_routing_pass = MultipathSwap(coupling_map, max_swaps=s)
 
 	ipass_list = [basis_pass] 
-	fpass_list = [gate1q_pass]
+	fpass_list = [gate1q_pass, gatecx_pass]
 
 	pass_list1, pass_list2 = ipass_list.copy(), ipass_list.copy()
 	pass_list1.append(sabre_mapping_pass)

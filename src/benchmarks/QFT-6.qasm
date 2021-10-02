@@ -14,6 +14,7 @@ cu1(pi/2) q[4],q[5];
 swap q[0],q[5];
 swap q[1],q[4];
 swap q[2],q[3];
+barrier q;
 measure q[0] -> c[0];
 measure q[1] -> c[1];
 measure q[2] -> c[2];

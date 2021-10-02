@@ -52,6 +52,7 @@ h q[11];
 h q[12];
 h q[13];
 h q[14];
+barrier q;
 measure q[0] -> c[0];
 measure q[1] -> c[1];
 measure q[2] -> c[2];
