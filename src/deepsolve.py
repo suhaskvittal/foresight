@@ -15,7 +15,7 @@ from copy import copy, deepcopy
 from solnsearch import compute_candidate, fold
 from pathfind import build_path_dag, _path_find
 
-def deep_solve(coupling_map, dag, dag_in_progress, in_layout, in_layer, finished_ops, lookahead=3, max_swaps=10):
+def deep_solve(coupling_map, dag, dag_in_progress, in_layout, in_layer, finished_ops, lookahead=5, max_swaps=10):
 	if len(in_layer) == 0:
 		return (in_layer, in_layout, dag_in_progress, finished_ops)
 

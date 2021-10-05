@@ -59,37 +59,39 @@ def _bench_and_cmp(ref_circ, coupling_map, pm1, pm2, runs=100):
 				min_swaps = s
 	if runs == 1:
 		for circ in [ref_circ, circ1, circ2]:
-			res = BACKEND.run(circ, shots=1024).result()
-			print(res.get_counts(circ))	
+			#res = BACKEND.run(circ, shots=1024).result()
+			#print(res.get_counts(circ))	
 			draw(circ)
 	return swaps, max_swaps, min_swaps, mean_t1, mean_t2
 
 if __name__ == '__main__':
-	n, m = 2, 5
-	s = 7
-	circ = QuantumCircuit.from_qasm_file('benchmarks/BV-10.qasm') 
+	n, m = int(argv[1]), int(argv[2])
+	s = max(n+m+2, 4)
+	circ = QuantumCircuit.from_qasm_file('benchmarks/qasmbench/%s/%s/%s.qasm' % (argv[3], argv[4], argv[4])) 
 	coupling_map = CouplingMap.from_grid(n, m)
+	#coupling_map = CouplingMap.from_line(n)
+	#coupling_map = CouplingMap.from_ring(n)
 
 	basis_pass = Unroller(G_QISKIT_GATE_SET)
 	trivial_layout_pass = TrivialLayout(coupling_map)
+	apply_layout_pass = ApplyLayout()
 	gate1q_pass = Optimize1qGates()
-	gatecx_pass = CXCancellation()
+	gatermv_pass = CommutativeCancellation(["cx"])
 
 	sabre_routing_pass = SabreSwap(coupling_map)
 	sabre_mapping_pass = SabreLayout(coupling_map, routing_pass=None)
 	csolv_routing_pass = MultipathSwap(coupling_map, max_swaps=s)
 
 	ipass_list = [basis_pass] 
-	fpass_list = [gate1q_pass, gatecx_pass]
+	fpass_list = []
 
 	pass_list1, pass_list2 = ipass_list.copy(), ipass_list.copy()
-	pass_list1.append(sabre_mapping_pass)
-	pass_list1.append(sabre_routing_pass)
-	pass_list2.append(csolv_routing_pass)
+	pass_list1.extend([sabre_mapping_pass, apply_layout_pass, sabre_routing_pass])
+	pass_list2.extend([sabre_mapping_pass, apply_layout_pass, csolv_routing_pass])
 
 	pass_list1.extend(fpass_list)
 	pass_list2.extend(fpass_list)
 
 	pm1 = PassManager(pass_list1)
 	pm2 = PassManager(pass_list2)
-	print(_bench_and_cmp(circ, coupling_map, pm1, pm2, runs=int(argv[1])))
+	print(_bench_and_cmp(circ, coupling_map, pm1, pm2, runs=int(argv[5])))
