@@ -68,7 +68,7 @@ def b_qasmbench(coupling_map, dataset='medium'):
 		circ = QuantumCircuit.from_qasm_file('benchmarks/qasmbench/%s/%s/%s.qasm' % (dataset, qb_file, qb_file))	
 		_pad_circuit_to_fit(circ, coupling_map)
 
-		swap_diff, sabre_swaps, mpath_swaps, sabre_time, mpath_time = _bench_and_cmp(circ, coupling_map, vanilla_pm, sabre_pm, mpath_pm, runs=5)	
+		swap_diff, sabre_swaps, mpath_swaps, sabre_time, mpath_time = _bench_and_cmp(circ, coupling_map, vanilla_pm, sabre_pm, mpath_pm, runs=1)	
 		if sabre_swaps == -1:
 			swap_diff = 'N/A'
 			mpath_swaps = 'N/A'

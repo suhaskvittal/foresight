@@ -19,7 +19,7 @@ from ppc import PriorityPathCollection
 MPSWAP_ERRNO = 0
 
 class MultipathSwap(TransformationPass):
-	def __init__(self, coupling_map, seed=None, max_swaps=5, max_lookahead=7, solution_cap=8, edge_weights=None):
+	def __init__(self, coupling_map, seed=None, max_swaps=5, max_lookahead=4, solution_cap=8, edge_weights=None):
 		self.coupling_map = coupling_map		
 		self.max_swaps = max_swaps
 		self.max_lookahead = max_lookahead
@@ -52,6 +52,7 @@ class MultipathSwap(TransformationPass):
 		solver_queue = base_solver_queue
 		if len(primary_layer_view) == 0:
 			return solver_queue
+
 		for _ in range(self.max_lookahead):
 			if len(primary_layer_view) == 0:
 				break
