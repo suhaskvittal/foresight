@@ -3,9 +3,18 @@
 	date:	7 October 2021
 """
 
+import numpy as np
+
 from copy import copy, deepcopy
 
-class SegmentTreeNode:
+class SumTreeNode:
+	def __init__(self, obj_data, sum_data, parent, children):
+		self.obj_data = obj_data
+		self.sum_data = sum_data
+		self.parent = parent
+		self.children = children
+
+class PathJoinTreeNode:
 	def __init__(self, swap_collection, conflict_matrix_line, parent, left_child, right_child):
 		self.data = swap_collection		# path(left) JOIN path(right)
 		self.conflict_matrix_line = conflict_matrix_line
@@ -14,16 +23,17 @@ class SegmentTreeNode:
 		self.right_child = right_child
 		self.dirty = 0
 
-class SegmentTree:
+class PathJoinTree:
 	def __init__(self, leaves, conflict_matrix):	
-		self.leaves = [SegmentTreeNode(_path_to_swap_collection(path), conflict_matrix[i], None, None, None) for (i, path) in enumerate(leaves)]
+		self.leaves = [PathJoinTreeNode(_path_to_swap_collection(path), conflict_matrix[i], None, None, None) for (i, path) in enumerate(leaves)]
+		zero_line = [0]*len(conflict_matrix[0])
 		while not _is_pow2(len(leaves)):
-			self.leaves.append(SegmentTreeNode([], [0]*len(conflict_matrix[0]), None, None, None))
+			self.leaves.append(PathJoinTreeNode([], zero_line, None, None, None))
 		# Build segmented tree from leaves using BFS-like algorithm.
 		queue = [leaf for leaf in self.leaves]
 		while len(queue) > 1:  # If len(queue) == 1, we only have the root inside.
 			left, right = queue.pop(0), queue.pop(0)
-			parent = SegmentTreeNode(None, None, None, left, right)
+			parent = PathJoinTreeNode(None, None, None, left, right)
 			self._update_node(parent)
 			left.parent = parent
 			right.parent = parent

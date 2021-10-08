@@ -8,18 +8,19 @@ from qiskit.transpiler.layout import Layout
 from qiskit.dagcircuit import DAGNode
 from qiskit.circuit.library import CXGate, SwapGate, Measure
 
-from pulp import * 
-
 import numpy as np
 
 from copy import copy, deepcopy
 
+import multiprocessing as mp  # Needed to reduce memory usage.
+
 from ppc import PriorityPathCollection
+from dstruct import SumTreeNode
 
 MPSWAP_ERRNO = 0
 
 class MultipathSwap(TransformationPass):
-	def __init__(self, coupling_map, seed=None, max_swaps=5, max_lookahead=4, solution_cap=8, edge_weights=None):
+	def __init__(self, coupling_map, seed=None, max_swaps=5, max_lookahead=4, solution_cap=4, edge_weights=None):
 		self.coupling_map = coupling_map		
 		self.max_swaps = max_swaps
 		self.max_lookahead = max_lookahead
@@ -49,36 +50,66 @@ class MultipathSwap(TransformationPass):
 		return mapped_dag
 	
 	def deep_solve(self, primary_layer_view, secondary_layer_view, base_solver_queue, canonical_register):
-		solver_queue = base_solver_queue
 		if len(primary_layer_view) == 0:
-			return solver_queue
+			return base_solver_queue
 
+		# Build tree of output layers.
+		solver_queue = []
+		leaves = []
+		for (i, (base_layout, base_dag)) in enumerate(base_solver_queue):
+			root_node = SumTreeNode(base_dag, 0, None, [])  # Other nodes won't keep a DAG.
+			leaves.append(root_node)
+			solver_queue.append((base_layout, i))
 		for _ in range(self.max_lookahead):
 			if len(primary_layer_view) == 0:
 				break
 			next_solver_queue = []
+			next_leaves = []
 			while len(solver_queue) > 0:  # Empty out queue into next_solver_queue.
-				current_layout, current_dag = solver_queue.pop()
+				current_layout, parent_id = solver_queue.pop()
+				parent = leaves[parent_id]
+				# Find parent corresponding to parent id.
 				solutions = self.shallow_solve(primary_layer_view, secondary_layer_view, current_layout, canonical_register)
 				# Apply solutions non-deterministically to current_dag.
-				for (output_layers, new_layout) in solutions:
-					mapped_dag = deepcopy(current_dag)
-					for layer in output_layers:
-						for node in layer:
-							mapped_dag.apply_operation_back(node.op, qargs=node.qargs, cargs=node.cargs)
-					next_solver_queue.append((new_layout, mapped_dag))
+				for (i, (output_layers, new_layout)) in enumerate(solutions):
+					# Create node for each candidate solution.
+					node = SumTreeNode(output_layers, parent.sum_data + sum(len(layer) for layer in output_layers), parent, []) 
+					parent.children.append(node)
+					next_leaves.append(node)
+					next_solver_queue.append((new_layout, len(next_leaves) - 1))
 			solver_queue.extend(next_solver_queue)
+			leaves = next_leaves
 			primary_layer_view.pop(0)
 			secondary_layer_view.pop(0)
-		# Choose optimal solution from existing queue. Then deep solve again.
-		min_dag_size = -1
+		# Now, we simply check the leaves of the output layer tree. We select the leaf with the minimum sum.
+		min_leaves = None
+		min_sum = -1
+		for (i, leaf) in enumerate(leaves):
+			layout, _ = solver_queue[i]
+			if min_sum < 0 or leaf.sum_data < min_sum:
+				min_leaves = [(leaf, layout)]
+				min_sum = leaf.sum_data
+			elif leaf.sum_data == min_sum:
+				min_leaves.append((leaf, layout))
+		# Now that we know the best leaves, we simply just need to build the corresponding dags.
+		# Traverse up the leaves -- there is only one path to a root.
 		min_solutions = []
-		for (layout, dag) in solver_queue:
-			if min_dag_size < 0 or dag.size() < min_dag_size:	
-				min_dag_size = dag.size()
-				min_solutions = [(layout, dag)]
-			elif dag.size() == min_dag_size:
-				min_solutions.append((layout, dag))
+		for (leaf, layout) in min_leaves:
+			output_layer_collection = []
+			curr = leaf
+			while curr.parent != None:
+				output_layer_collection.append(curr.obj_data)
+				curr = curr.parent
+			# Now we should be at the root, copy the DAG in the root's obj_data.
+			mapped_dag = deepcopy(curr.obj_data)
+			for i in range(len(output_layer_collection)):
+				# Apply in reverse order of the collection (as collection was built in reverse order).
+				output_layers = output_layer_collection[-(i+1)]
+				for layer in output_layers:
+					for node in layer:
+						mapped_dag.apply_operation_back(node.op, qargs=node.qargs, cargs=node.cargs)
+			min_solutions.append((layout, mapped_dag))
+
 		return self.deep_solve(primary_layer_view, secondary_layer_view, min_solutions[:self.solution_cap], canonical_register)
 
 	def shallow_solve(self, primary_layer_view, secondary_layer_view, current_layout, canonical_register):

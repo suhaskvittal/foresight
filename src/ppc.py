@@ -5,7 +5,7 @@
 
 import numpy as np
 
-from dstruct import PriorityQueue, SegmentTree, _soln_hash_f
+from dstruct import PriorityQueue, PathJoinTree, _soln_hash_f
 
 DEFAULT_SIZE = 20
 
@@ -22,9 +22,9 @@ class PriorityPathCollection:
 		min_score = -1
 		
 		soln_hash = set()
-		segment_tree = SegmentTree([pq.peek()[0] for pq in self.pqueues], self.conflict_matrix)
+		path_join_tree = PathJoinTree([pq.peek()[0] for pq in self.pqueues], self.conflict_matrix)
 		for run in range(runs):
-			collection = segment_tree.get_root()
+			collection = path_join_tree.get_root()
 			modified_heaps = []
 			new_paths = []
 			for (i, pq) in enumerate(self.pqueues):
@@ -35,7 +35,7 @@ class PriorityPathCollection:
 					modified_heaps.append(i)
 					new_paths.append(pq.peek()[0])
 			if len(modified_heaps) > 0:
-				segment_tree.modify_leaves(modified_heaps, new_paths)
+				path_join_tree.modify_leaves(modified_heaps, new_paths)
 			if _soln_hash_f(collection) in soln_hash:
 				continue
 			soln_hash.add(_soln_hash_f(collection))
