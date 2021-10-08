@@ -3,15 +3,14 @@
 	date: 	14 September 2021 @ 2:36 p.m. EST
 """
 
-from qiskit.circuit import QuantumCircuit
+from qiskit.circuit import QuantumCircuit, Qubit
 from qiskit.transpiler import CouplingMap, PassManager
 from qiskit.transpiler.passes import *
 from qiskit.compiler import transpile
 from qiskit.visualization import plot_histogram
 from qiskit import Aer
 
-from csolvswap import ConvexSolverSwap
-from mpathswap import MultipathSwap
+from mpathswap import MultipathSwap, MPSWAP_ERRNO
 
 from timeit import default_timer as timer
 
@@ -30,8 +29,26 @@ BACKEND = Aer.get_backend('qasm_simulator')
 def draw(circ):
 	print(circ.draw(output='text'))
 
-def _bench_and_cmp(ref_circ, coupling_map, pm1, pm2, runs=100):
-	swaps, max_swaps, min_swaps = 0.0, None, None
+def _build_pass_manager(router, coupling_map):
+	basis_pass = Unroller(G_QISKIT_GATE_SET)
+	apply_layout_pass = ApplyLayout()
+	gate1q_pass = Optimize1qGates()
+
+	sabre_mapping_pass = SabreLayout(coupling_map, routing_pass=None)
+	
+	if router is None:
+		return PassManager([basis_pass, gate1q_pass])
+	else:
+		return PassManager([basis_pass, sabre_mapping_pass, apply_layout_pass, router, gate1q_pass]) 
+
+def _pad_circuit_to_fit(circ, coupling_map):
+	while circ.num_qubits < coupling_map.size():
+		circ.add_bits([Qubit()])
+
+def _bench_and_cmp(ref_circ, coupling_map, pm0, pm1, pm2, runs=100):
+	circ0 = pm0.run(ref_circ)
+
+	diff_swaps, first_swaps, second_swaps = 0.0, -circ0.size(), -circ0.size()
 	mean_t1, mean_t2 = 0.0, 0.0
 	for _ in range(runs):
 		# Benchmark first pass.
@@ -44,25 +61,19 @@ def _bench_and_cmp(ref_circ, coupling_map, pm1, pm2, runs=100):
 		circ2 = pm2.run(ref_circ)
 		end = timer()
 		time2 = end - start
-		# Update sats
+		# Update stats
+		if MPSWAP_ERRNO == 1:
+			return -1, -1, -1, -1, -1
 		s = (circ1.size() - circ2.size())
-		swaps += s / runs
+		diff_swaps += s / runs
+		first_swaps += circ1.size() / runs
+		second_swaps += circ2.size() / runs
 		mean_t1 += time1 / runs
 		mean_t2 += time2 / runs
-		if max_swaps is None:
-			max_swaps = s
-			min_swaps = s
-		else:
-			if s > max_swaps:
-				max_swaps = s
-			elif s < min_swaps:
-				min_swaps = s
-	if runs == 1:
-		for circ in [ref_circ, circ1, circ2]:
-			#res = BACKEND.run(circ, shots=1024).result()
-			#print(res.get_counts(circ))	
-			draw(circ)
-	return swaps, max_swaps, min_swaps, mean_t1, mean_t2
+#	if runs == 1:
+#		for circ in [circ0, circ1, circ2]:
+#			draw(circ)
+	return diff_swaps, first_swaps, second_swaps, mean_t1, mean_t2
 
 if __name__ == '__main__':
 	n, m = int(argv[1]), int(argv[2])
@@ -72,26 +83,13 @@ if __name__ == '__main__':
 	#coupling_map = CouplingMap.from_line(n)
 	#coupling_map = CouplingMap.from_ring(n)
 
-	basis_pass = Unroller(G_QISKIT_GATE_SET)
-	trivial_layout_pass = TrivialLayout(coupling_map)
-	apply_layout_pass = ApplyLayout()
-	gate1q_pass = Optimize1qGates()
-	gatermv_pass = CommutativeCancellation(["cx"])
+	_pad_circuit_to_fit(circ, coupling_map)
 
 	sabre_routing_pass = SabreSwap(coupling_map)
-	sabre_mapping_pass = SabreLayout(coupling_map, routing_pass=None)
-	csolv_routing_pass = MultipathSwap(coupling_map, max_swaps=s)
+	mpath_routing_pass = MultipathSwap(coupling_map, max_swaps=s)
 
-	ipass_list = [basis_pass] 
-	fpass_list = []
+	pm0 = _build_pass_manager(None) 
+	pm1 = _build_pass_manager(sabre_routing_pass)
+	pm2 = _build_pass_manager(mpath_routing_pass)
 
-	pass_list1, pass_list2 = ipass_list.copy(), ipass_list.copy()
-	pass_list1.extend([sabre_mapping_pass, apply_layout_pass, sabre_routing_pass])
-	pass_list2.extend([sabre_mapping_pass, apply_layout_pass, csolv_routing_pass])
-
-	pass_list1.extend(fpass_list)
-	pass_list2.extend(fpass_list)
-
-	pm1 = PassManager(pass_list1)
-	pm2 = PassManager(pass_list2)
-	print(_bench_and_cmp(circ, coupling_map, pm1, pm2, runs=int(argv[5])))
+	print(_bench_and_cmp(circ, coupling_map, pm0, pm1, pm2, runs=int(argv[5])))

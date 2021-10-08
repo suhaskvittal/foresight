@@ -1,6 +1,6 @@
 """
 	author: Suhas Vittal
-	date:	4 October 2021
+	date:	4 October 2021 @ 11:08 a.m. EST
 """
 
 import numpy as np
@@ -15,7 +15,7 @@ class PriorityPathCollection:
 		self.conflict_matrix = [[0 for _ in range(num_vertices)] for _ in range(num_sources)]
 		self.pqueues = [PriorityQueue.buildheap(path_collection_list[i], self.conflict_matrix, i) for i in range(num_sources)]
 	
-	def find_and_join(self, verifier, target_set, current_layout, post_primary_layer_view, runs=5000):
+	def find_and_join(self, verifier, target_set, current_layout, post_primary_layer_view, runs=500):
 		min_collection_list = []	
 		min_score = -1
 		
@@ -24,6 +24,7 @@ class PriorityPathCollection:
 			collection = []
 			size = 0
 			conflict_matrix_line = [0 for _ in range(self.num_vertices)]			
+			score_sum = 0.0
 			for (i, pq) in enumerate(self.pqueues):
 				path, s = pq.peek()
 				# Otherwise, check for conflicts.
@@ -36,19 +37,21 @@ class PriorityPathCollection:
 				for (j, (v0, v1)) in enumerate(path):
 					conflict_matrix_line[v0] |= self.conflict_matrix[i][v0] << shift_ctr	
 					conflict_matrix_line[v1] |= self.conflict_matrix[i][v1] << shift_ctr
-					if j + shift_ctr < len(collection):
+					if j + shift_ctr < len(collection) and path[j] not in collection[j+shift_ctr]:
 						collection[j+shift_ctr].append(path[j])
 					else:
 						collection.append([path[j]])
 					size += 1
 				# Finally, randomly increase score of path in pq.
+				score_sum += s
 				if np.random.random() < 0.3:
 					pq.change_score(path, s * 1.5, self.conflict_matrix, i) 
 			if size < 0 or _soln_hash_f(collection) in soln_hash:
 				continue
 			soln_hash.add(_soln_hash_f(collection))
-			is_valid, dist = verifier._verify_and_measure(collection, target_set, current_layout, post_primary_layer_view)
-			score = dist + size
+			is_valid, score = verifier._verify_and_measure(collection, target_set, current_layout, post_primary_layer_view)
+			if score == score_sum:
+				print('MATCH')
 			# If we get to this point, verify and update.
 			if is_valid:
 				if min_score < 0 or score < min_score:

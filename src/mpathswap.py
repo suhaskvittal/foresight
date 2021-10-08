@@ -16,25 +16,34 @@ from copy import copy, deepcopy
 
 from ppc import PriorityPathCollection
 
+MPSWAP_ERRNO = 0
+
 class MultipathSwap(TransformationPass):
-	def __init__(self, coupling_map, seed=None, max_swaps=5, max_lookahead=5, solution_cap=4, edge_weights=None):
+	def __init__(self, coupling_map, seed=None, max_swaps=5, max_lookahead=7, solution_cap=8, edge_weights=None):
 		self.coupling_map = coupling_map		
 		self.max_swaps = max_swaps
 		self.max_lookahead = max_lookahead
 		self.solution_cap = solution_cap
 		self.seed = seed
 
+		self.path_memoizer = {}
+
 		self.requires = []
 		self.preserves = []
 			
 	def run(self, dag):
+		MPSWAP_ERRNO = 0  # reset ERRNO
+
 		mapped_dag = dag._copy_circuit_metadata()
 		canonical_register = dag.qregs["q"]
 		current_layout = Layout.generate_trivial_layout(canonical_register)
 		
 		primary_layer_view, secondary_layer_view = _bfs_get_layer_view(dag)
-		print('LAYER DEPTH', len(primary_layer_view))
 		solutions = self.deep_solve(primary_layer_view, secondary_layer_view, [(current_layout, mapped_dag)], canonical_register)
+
+		if len(solutions) == 0:
+			MPSWAP_ERRNO = 1  # error has occurred.
+			return mapped_dag
 
 		_, mapped_dag = solutions[0]  # Just get first solution, doesn't really matter.
 		return mapped_dag
@@ -43,9 +52,6 @@ class MultipathSwap(TransformationPass):
 		solver_queue = base_solver_queue
 		if len(primary_layer_view) == 0:
 			return solver_queue
-
-		print('DEEP SOLVE', len(primary_layer_view))
-
 		for _ in range(self.max_lookahead):
 			if len(primary_layer_view) == 0:
 				break
@@ -136,6 +142,10 @@ class MultipathSwap(TransformationPass):
 		return [self._path_minfold(c, current_layout, post_primary_layer_view) for c in path_candidates]
 	
 	def _path_select(self, source, sink):
+		memoizer_entry = (source, sink) if source < sink else (sink, source)
+		if memoizer_entry in self.path_memoizer:
+			return self.path_memoizer[memoizer_entry]
+	
 		path_candidates = []
 
 		dfs_stack = [(source, [])]
@@ -145,6 +155,7 @@ class MultipathSwap(TransformationPass):
 			v, prev = dfs_stack.pop()	
 			if v == sink:
 				path_candidates.append(prev)  # We have found the sink, add the corresponding path.
+				continue
 			for w in self.coupling_map.graph.neighbors(v):
 				# IF w is too far from the sink, THEN do not add w.
 				edge = (v, w) if v < w else (w, v)	
@@ -155,6 +166,8 @@ class MultipathSwap(TransformationPass):
 				prev_cpy = copy(prev)
 				prev_cpy.append(edge)
 				dfs_stack.append((w, prev_cpy))
+
+		self.path_memoizer[memoizer_entry] = path_candidates
 		return path_candidates
 	
 	def _path_minfold(self, path, current_layout, post_primary_layer_view):
@@ -193,9 +206,11 @@ class MultipathSwap(TransformationPass):
 	def _verify_and_measure(self, soln, target_set, current_layout, post_primary_layer_view):
 		test_layout = current_layout.copy()
 		target_set_indicator = {x: 0 for x in target_set}
+		size = 0
 		for layer in soln:
 			for (p0, p1) in layer:
 				test_layout[p0], test_layout[p1] = test_layout[p1], test_layout[p0]
+				size += 1
 		for p0 in self.coupling_map.physical_qubits:
 			v0 = test_layout[p0]
 			for p1 in self.coupling_map.neighbors(p0):
@@ -205,15 +220,17 @@ class MultipathSwap(TransformationPass):
 				elif (v1, v0) in target_set:
 					target_set_indicator[(v1, v0)] = 1
 		dist = self._distf(post_primary_layer_view, test_layout)
-		return all(target_set_indicator[x] == 1 for x in target_set), dist
+		return all(target_set_indicator[x] == 1 for x in target_set), dist + size
 
 	def _distf(self, post_primary_layer_view, test_layout):
 		dist = 0.0
-		for r in range(0, min(len(post_primary_layer_view), 5)):
+		for r in range(0, min(len(post_primary_layer_view), 9+1)):
 			post_layer = post_primary_layer_view[r]
+			sub_sum = 0.0
 			for op in post_layer:
 				v0, v1 = op.qargs
-				dist += self.coupling_map.distance_matrix[test_layout[v0], test_layout[v1]] / np.sqrt(r+1)
+				sub_sum += self.coupling_map.distance_matrix[test_layout[v0], test_layout[v1]]
+			dist += sub_sum / ((r+1)**2)
 		return dist
 
 def _bfs_get_layer_view(dag):
