@@ -45,10 +45,11 @@ def _pad_circuit_to_fit(circ, coupling_map):
 	while circ.num_qubits < coupling_map.size():
 		circ.add_bits([Qubit()])
 
-def _bench_and_cmp(ref_circ, coupling_map, pm0, pm1, pm2, runs=100):
+def _bench_and_cmp(ref_circ, coupling_map, pm0, pm1, pm2, runs=100, show=False):
 	circ0 = pm0.run(ref_circ)
 
-	diff_swaps, first_swaps, second_swaps = 0.0, -circ0.size(), -circ0.size()
+	mean_first_swaps, mean_second_swaps = -circ0.size(), -circ0.size()
+	mean_depth1, mean_depth2 = 0.0, 0.0
 	mean_t1, mean_t2 = 0.0, 0.0
 	for _ in range(runs):
 		# Benchmark first pass.
@@ -62,22 +63,23 @@ def _bench_and_cmp(ref_circ, coupling_map, pm0, pm1, pm2, runs=100):
 		end = timer()
 		time2 = end - start
 		# Update stats
-		if MPSWAP_ERRNO == 1:
-			return -1, -1, -1, -1, -1
+		if circ2.size() == 0:
+			return -1, -1, -1, -1, -1, -1
 		s = (circ1.size() - circ2.size())
-		diff_swaps += s / runs
-		first_swaps += circ1.size() / runs
-		second_swaps += circ2.size() / runs
+		mean_first_swaps += circ1.size() / runs
+		mean_second_swaps += circ2.size() / runs
+		mean_depth1 += circ1.depth() / runs
+		mean_depth2 += circ2.depth() / runs
 		mean_t1 += time1 / runs
 		mean_t2 += time2 / runs
-#	if runs == 1:
-#		for circ in [circ0, circ1, circ2]:
-#			draw(circ)
-	return diff_swaps, first_swaps, second_swaps, mean_t1, mean_t2
+	if runs == 1 and show:
+		for circ in [circ0, circ1, circ2]:
+			draw(circ)
+	return mean_first_swaps, mean_second_swaps, mean_depth1, mean_depth2, mean_t1, mean_t2
 
 if __name__ == '__main__':
 	n, m = int(argv[1]), int(argv[2])
-	s = max(n+m+2, 4)
+	s = max(n+m, 4)
 	circ = QuantumCircuit.from_qasm_file('benchmarks/qasmbench/%s/%s/%s.qasm' % (argv[3], argv[4], argv[4])) 
 	coupling_map = CouplingMap.from_grid(n, m)
 	#coupling_map = CouplingMap.from_line(n)
@@ -88,8 +90,9 @@ if __name__ == '__main__':
 	sabre_routing_pass = SabreSwap(coupling_map)
 	mpath_routing_pass = MultipathSwap(coupling_map, max_swaps=s)
 
-	pm0 = _build_pass_manager(None) 
-	pm1 = _build_pass_manager(sabre_routing_pass)
-	pm2 = _build_pass_manager(mpath_routing_pass)
+	pm0 = _build_pass_manager(None, coupling_map) 
+	pm1 = _build_pass_manager(sabre_routing_pass, coupling_map)
+	pm2 = _build_pass_manager(mpath_routing_pass, coupling_map)
 
-	print(_bench_and_cmp(circ, coupling_map, pm0, pm1, pm2, runs=int(argv[5])))
+	print(_bench_and_cmp(circ, coupling_map, pm0, pm1, pm2, runs=int(argv[5]), show=True))
+
