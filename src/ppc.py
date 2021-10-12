@@ -17,8 +17,7 @@ class PriorityPathCollection:
 		self.path_collection_list = path_collection_list
 		self.pqueues = [PathPriorityQueue.buildheap(path_collection_list[i], self.conflict_matrix, i) for i in range(num_sources)]
 	
-	def find_and_join(self, verifier, target_list, current_layout, post_primary_layer_view, runs=10000):
-
+	def find_and_join(self, verifier, target_list, current_layout, post_primary_layer_view, runs=1000):
 		min_collection_list = []	
 		min_score = -1
 
@@ -30,7 +29,7 @@ class PriorityPathCollection:
 				path, s = pq.dequeue(self.conflict_matrix, 0)
 				if min_score < 0 or s < min_score:
 					min_score = s
-					min_collection_list = [_path_to_swap_collection(path)]
+					min_collection_list.append(_path_to_swap_collection(path))
 				elif s == min_score:
 					min_collection_list.append(_path_to_swap_collection(path))
 				else:
@@ -58,7 +57,7 @@ class PriorityPathCollection:
 				break
 			if min_score < 0 or score < min_score:
 				min_score = score
-				min_collection_list = [collection]
+				min_collection_list.append(collection)
 			elif score == min_score:
 				min_collection_list.append(collection)
 		if len(min_collection_list) == 0:  

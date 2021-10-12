@@ -32,18 +32,18 @@ G_QISKIT_GATE_SET = ['u1', 'u2', 'u3', 'cx']
 
 qasmbench_medium = [
 	'qft_n15',
-#	'dnn_n8',			# quantum deep neural net
-#	'adder_n10',		# single adder
-#	'cc_n12',			# counterfeit coin
-#	'multiplier_n15', 	# binary multiplier
-#	'qf21_n15', 		# quantum phase estimation, factor 21			
-#	'sat_n11',		
+	'dnn_n8',			# quantum deep neural net
+	'adder_n10',		# single adder
+	'cc_n12',			# counterfeit coin
+	'multiplier_n15', 	# binary multiplier
+	'qf21_n15', 		# quantum phase estimation, factor 21			
+	'sat_n11',		
 	'seca_n11',			# shor's error correction
-#	'bv_n14',			# bernstein-vazirani algorithm 
+	'bv_n14',			# bernstein-vazirani algorithm 
 	'ising_n10',		# ising gate sim
 	'qaoa_n6',			
-#	'qpe_n9',			# quantum phase estimation
-#	'simon_n6'			# simon's algorithm	
+	'qpe_n9',			# quantum phase estimation
+	'simon_n6'			# simon's algorithm	
 ]
 
 qasmbench_large = [
@@ -74,6 +74,7 @@ class BenchmarkPass(AnalysisPass):
 		original_circuit_size = dag.size()
 
 		primary_layer_view, secondary_layer_view = self.property_set['primary_layer_view'], self.property_set['secondary_layer_view']
+		basis_pass = Unroller(G_QISKIT_GATE_SET)
 
 		sabre_swaps, mpath_swaps, sabre_depth, mpath_depth, sabre_time, mpath_time = 0, 0, 0, 0, 0, self.property_set['bench_layer_view']
 		for _ in range(self.runs):
@@ -89,6 +90,8 @@ class BenchmarkPass(AnalysisPass):
 			mpath_dag = self.mpath_routing_pass.run(dag, primary_layer_view=plv_cpy, secondary_layer_view=slv_cpy)
 			end = timer()
 			mpath_time += (end - start) / self.runs
+			# Unroll SWAPs to CNOTs 
+			sabre_dag, mpath_dag = basis_pass.run(sabre_dag), basis_pass.run(mpath_dag)
 			# Compare dags.
 			if mpath_dag.size() < original_circuit_size:
 				sabre_swaps, mpath_swaps, sabre_depth, mpath_depth, sabre_time, mpath_time = -1, -1, -1, -1, -1, -1
@@ -98,8 +101,6 @@ class BenchmarkPass(AnalysisPass):
 			sabre_depth += (sabre_dag.depth()) / self.runs
 			mpath_depth += (mpath_dag.depth()) / self.runs
 		self.benchmark_results = [sabre_swaps, mpath_swaps, sabre_depth, mpath_depth, sabre_time, mpath_time]
-
-
 
 def b_qasmbench(coupling_map, dataset='medium', out_file='qasmbench.csv', max_swaps=10, max_lookahead=5, runs=5):
 	sabre_routing_pass = SabreSwap(coupling_map)

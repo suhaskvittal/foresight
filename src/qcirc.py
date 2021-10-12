@@ -11,6 +11,7 @@ from qiskit.visualization import plot_histogram
 from qiskit import Aer
 
 from mpathswap import MultipathSwap, MPSWAP_ERRNO
+from layerview import LayerViewPass
 
 from timeit import default_timer as timer
 
@@ -29,21 +30,36 @@ BACKEND = Aer.get_backend('qasm_simulator')
 def draw(circ):
 	print(circ.draw(output='text'))
 
-def _build_pass_manager(router, coupling_map):
+def _build_pass_manager(router, coupling_map, mapping='sabre'):
 	basis_pass = Unroller(G_QISKIT_GATE_SET)
 	apply_layout_pass = ApplyLayout()
 	gate1q_pass = Optimize1qGates()
+	layer_view = LayerViewPass()
 
-	sabre_mapping_pass = SabreLayout(coupling_map, routing_pass=None)
+	if mapping == 'sabre':
+		layout_pass = SabreLayout(coupling_map)
+	else:
+		layout_pass = TrivialLayout(coupling_map)
 	
 	if router is None:
 		return PassManager([basis_pass, gate1q_pass])
 	else:
-		return PassManager([basis_pass, sabre_mapping_pass, apply_layout_pass, router, gate1q_pass]) 
+		return PassManager([basis_pass, layout_pass, apply_layout_pass, layer_view, router, gate1q_pass]) 
 
 def _pad_circuit_to_fit(circ, coupling_map):
 	while circ.num_qubits < coupling_map.size():
 		circ.add_bits([Qubit()])
+	
+def _diff(counts1, counts2):
+	visited = set()
+	diff = 0.0
+	for x in counts1:
+		diff += abs(counts1[x] - counts2[x]) if x in counts2 else 0.0
+		visited.add(x)
+	for x in counts2:
+		if x not in visited:
+			diff += counts2[x]
+	return diff
 
 def _bench_and_cmp(ref_circ, coupling_map, pm0, pm1, pm2, runs=100, show=False):
 	circ0 = pm0.run(ref_circ)
@@ -65,7 +81,6 @@ def _bench_and_cmp(ref_circ, coupling_map, pm0, pm1, pm2, runs=100, show=False):
 		# Update stats
 		if circ2.size() == 0:
 			return -1, -1, -1, -1, -1, -1
-		s = (circ1.size() - circ2.size())
 		mean_first_swaps += circ1.size() / runs
 		mean_second_swaps += circ2.size() / runs
 		mean_depth1 += circ1.depth() / runs
@@ -73,14 +88,21 @@ def _bench_and_cmp(ref_circ, coupling_map, pm0, pm1, pm2, runs=100, show=False):
 		mean_t1 += time1 / runs
 		mean_t2 += time2 / runs
 	if runs == 1 and show:
-		for circ in [circ0, circ1, circ2]:
-			draw(circ)
+#		base_counts = BACKEND.run(ref_circ, shots=1024).result().get_counts(ref_circ)
+#		sabre_counts = BACKEND.run(circ1, shots=1024).result().get_counts(circ1)
+#		mpath_counts = BACKEND.run(circ2, shots=1024).result().get_counts(circ2)
+		draw(ref_circ)
+		draw(circ1)
+		draw(circ2)
+#		print('DIFF: [SABRE] %.3f, [MPATH] %.3f' % (_diff(base_counts, sabre_counts), _diff(base_counts, mpath_counts)))
+		
 	return mean_first_swaps, mean_second_swaps, mean_depth1, mean_depth2, mean_t1, mean_t2
 
 if __name__ == '__main__':
 	n, m = int(argv[1]), int(argv[2])
 	s = max(n+m, 4)
 	circ = QuantumCircuit.from_qasm_file('benchmarks/qasmbench/%s/%s/%s.qasm' % (argv[3], argv[4], argv[4])) 
+#	circ = QuantumCircuit.from_qasm_file('benchmarks/qaoa10_depth2.qasm')
 	coupling_map = CouplingMap.from_grid(n, m)
 	#coupling_map = CouplingMap.from_line(n)
 	#coupling_map = CouplingMap.from_ring(n)
@@ -88,10 +110,10 @@ if __name__ == '__main__':
 	_pad_circuit_to_fit(circ, coupling_map)
 
 	sabre_routing_pass = SabreSwap(coupling_map)
-	mpath_routing_pass = MultipathSwap(coupling_map, max_swaps=s)
+	mpath_routing_pass = MultipathSwap(coupling_map, max_swaps=s, max_lookahead=8, solution_cap=8)
 
 	pm0 = _build_pass_manager(None, coupling_map) 
-	pm1 = _build_pass_manager(sabre_routing_pass, coupling_map)
+	pm1 = _build_pass_manager(sabre_routing_pass, coupling_map, mapping='sabre')
 	pm2 = _build_pass_manager(mpath_routing_pass, coupling_map)
 
 	print(_bench_and_cmp(circ, coupling_map, pm0, pm1, pm2, runs=int(argv[5]), show=True))

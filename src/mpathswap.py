@@ -143,7 +143,6 @@ class MultipathSwap(TransformationPass):
 		ppc = PriorityPathCollection(path_collection_list, len(self.coupling_map.physical_qubits), len(path_collection_list))
 		candidate_list, suggestions = ppc.find_and_join(self, target_list, current_layout, post_primary_layer_view)
 		if candidate_list is None:  # We failed, take the suggestions.
-			print('suggestions', suggestions)
 			for index_list in suggestions:
 				if len(index_list) == 0:
 					continue
@@ -154,10 +153,8 @@ class MultipathSwap(TransformationPass):
 			return [(output_layers, current_layout)]
 		# Compute all solutions.
 		solutions = []
-
-		print('====')
+		
 		for soln in candidate_list:
-			print(soln)
 			output_layers_cpy = deepcopy(output_layers)
 			new_layout = current_layout.copy()
 			for (i, layer) in enumerate(soln):  # Perform the requisite swaps.
@@ -255,7 +252,7 @@ class MultipathSwap(TransformationPass):
 		for (v0, v1) in path:
 			if v0 != v1:
 				size += 1
-		return min_fold, min_dist + len(path)
+		return min_fold, min_dist + len(path)*100
 
 	def _remap_gate_for_layout(self, op, layout, canonical_register):
 		new_op = copy(op)
@@ -278,14 +275,14 @@ class MultipathSwap(TransformationPass):
 					target_list_indicator[(v0, v1)] = 1
 				elif (v1, v0) in target_list:
 					target_list_indicator[(v1, v0)] = 1
-		max_allowed_size = sum(self.coupling_map.distance_matrix[current_layout[v0], current_layout[v1]] for (v0, v1) in target_list)
+		max_allowed_size = sum(self.coupling_map.distance_matrix[current_layout[v0], current_layout[v1]]-1 for (v0, v1) in target_list)
 		dist = self._distf(post_primary_layer_view, test_layout)
 
-		return all(target_list_indicator[x] == 1 for x in target_list) and size <= max_allowed_size, dist + size
+		return all(target_list_indicator[x] == 1 for x in target_list) and size <= max_allowed_size, dist + 100*size
 
 	def _distf(self, post_primary_layer_view, test_layout):
 		dist = 0.0
-		for r in range(0, min(len(post_primary_layer_view), 99+1)):
+		for r in range(0, min(len(post_primary_layer_view), 100+1)):
 			post_layer = post_primary_layer_view[r]
 			sub_sum = 0.0
 			for op in post_layer:
