@@ -103,11 +103,13 @@ class PriorityPathCollection:
 
 		modified_heaps = []
 		new_paths = []
+#		print('======')
 		while dfs_stack:
 			node = dfs_stack.pop()
 			left, right = node.left_child, node.right_child
 			# Only go down invalid children.
 			# If neither are invalid, then update a random entry in the target_sub_list.
+#			print(node.target_index_list, node.valid, left.target_index_list, left.valid, right.target_index_list, right.valid)
 			if left.valid == 1 and right.valid == 1:
 				update_index = node.target_index_list[np.random.randint(0, high=len(node.target_index_list))]
 				pq = self.pqueues[update_index]

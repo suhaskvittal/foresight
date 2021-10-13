@@ -19,6 +19,7 @@ from layerview import LayerViewPass
 from qcirc import _bench_and_cmp, _build_pass_manager, _pad_circuit_to_fit
 
 import pandas as pd
+import numpy as np
 
 from sys import argv
 
@@ -30,10 +31,12 @@ G_QISKIT_OPT_HEAVIER = 3
 G_QISKIT_OPT_LVL = G_QISKIT_OPT_HEAVY  
 G_QISKIT_GATE_SET = ['u1', 'u2', 'u3', 'cx']
 
+ibm_toronto = np.array([[0, 1], [1, 0], [1, 2], [1, 4], [2, 1], [2, 3], [3, 2], [3, 5], [4, 1], [4, 7], [5, 3], [5, 8], [6, 7], [7, 4], [7, 6], [7, 10], [8, 5], [8, 9], [8, 11], [9, 8], [10, 7], [10, 12], [11, 8], [11, 14], [12, 10], [12, 13], [12, 15], [13, 12], [13, 14], [14, 11], [14, 13], [14, 16], [15, 12], [15, 18], [16, 14], [16, 19], [17, 18], [18, 15], [18, 17], [18, 21], [19, 16], [19, 20], [19, 22], [20, 19], [21, 18], [21, 23], [22, 19], [22, 25], [23, 21], [23, 24], [24, 23], [24, 25], [25, 22], [25, 24], [25, 26], [26, 25]])
+
 qasmbench_medium = [
+	'adder_n10',		# single adder
 	'qft_n15',
 	'dnn_n8',			# quantum deep neural net
-	'adder_n10',		# single adder
 	'cc_n12',			# counterfeit coin
 	'multiplier_n15', 	# binary multiplier
 	'qf21_n15', 		# quantum phase estimation, factor 21			
@@ -162,7 +165,9 @@ if __name__ == '__main__':
 	print('Config:\n\tmode: %s\n\tcoupling style: %s\n\tmax swaps: %d\n\tmax lookahead: %d\n\truns: %d'
 			% (mode, coupling_style, max_swaps, max_look, runs))
 
-	if mode == 'medium':
+	if coupling_style == 'toronto':
+		coupling_map = CouplingMap(ibm_toronto)
+	elif mode == 'medium':
 		if coupling_style == 'grid':
 			coupling_map = CouplingMap.from_grid(3, 5)
 		elif coupling_style == 'linear':

@@ -18,7 +18,7 @@ from dstruct import SumTreeNode
 MPSWAP_ERRNO = 0
 
 class MultipathSwap(TransformationPass):
-	def __init__(self, coupling_map, seed=None, max_swaps=5, max_path_limit=128, max_lookahead=8, solution_cap=4, edge_weights=None):
+	def __init__(self, coupling_map, seed=None, max_swaps=5, max_path_limit=128, max_lookahead=16, solution_cap=4, edge_weights=None):
 		super().__init__()
 
 		self.coupling_map = coupling_map		
@@ -59,7 +59,8 @@ class MultipathSwap(TransformationPass):
 			root_node = SumTreeNode(base_dag, 0, None, [])  # Other nodes won't keep a DAG.
 			leaves.append(root_node)
 			solver_queue.append((base_layout, i))
-		for _ in range(self.max_lookahead):
+		look = 0
+		while look < self.max_lookahead and len(solver_queue) < self.solution_cap:
 			if len(primary_layer_view) == 0:
 				break
 			next_solver_queue = []
@@ -67,7 +68,7 @@ class MultipathSwap(TransformationPass):
 			for (current_layout, parent_id) in solver_queue:  # Empty out queue into next_solver_queue.
 				parent = leaves[parent_id]
 				# Find parent corresponding to parent id.
-				solutions = self.shallow_solve(primary_layer_view, secondary_layer_view, current_layout, canonical_register)
+				solutions, minus_look = self.shallow_solve(primary_layer_view, secondary_layer_view, current_layout, canonical_register)
 				# Apply solutions non-deterministically to current_dag.
 				for (i, (output_layers, new_layout)) in enumerate(solutions):
 					# Create node for each candidate solution.
@@ -79,6 +80,7 @@ class MultipathSwap(TransformationPass):
 			leaves = next_leaves
 			primary_layer_view.pop(0)
 			secondary_layer_view.pop(0)
+			look += 1
 		# Now, we simply check the leaves of the output layer tree. We select the leaf with the minimum sum.
 		min_leaves = []
 		min_sum = -1
@@ -139,7 +141,8 @@ class MultipathSwap(TransformationPass):
 				target_to_op[(q0, q1)] = op
 		# Build PPC and get candidate list.
 		if len(path_collection_list) == 0:
-			return [(output_layers, current_layout)]
+			return [(output_layers, current_layout)], 0
+#		print('\t', [(current_layout[q0], current_layout[q1]) for (q0, q1) in target_list])
 		ppc = PriorityPathCollection(path_collection_list, len(self.coupling_map.physical_qubits), len(path_collection_list))
 		candidate_list, suggestions = ppc.find_and_join(self, target_list, current_layout, post_primary_layer_view)
 		if candidate_list is None:  # We failed, take the suggestions.
@@ -150,11 +153,12 @@ class MultipathSwap(TransformationPass):
 				# Create new primary layer and secondary layer.
 				primary_layer_view.insert(1, [target_to_op[target] for target in target_sub_list]) 
 				secondary_layer_view.insert(1, [])
-			return [(output_layers, current_layout)]
+			return [(output_layers, current_layout)], len(suggestions)
 		# Compute all solutions.
 		solutions = []
 		
 		for soln in candidate_list:
+#			print(soln)
 			output_layers_cpy = deepcopy(output_layers)
 			new_layout = current_layout.copy()
 			for (i, layer) in enumerate(soln):  # Perform the requisite swaps.
@@ -178,7 +182,7 @@ class MultipathSwap(TransformationPass):
 					output_layers_cpy.append([])
 				output_layers_cpy[i+2].append(self._remap_gate_for_layout(op, new_layout, canonical_register))
 			solutions.append((output_layers_cpy, new_layout))  # Save layers to apply to DAG and corresponding layout.
-		return solutions
+		return solutions, 0
 
 	def path_find_and_fold(self, v0, v1, post_primary_layer_view, current_layout):
 		p0, p1 = current_layout[v0], current_layout[v1]
@@ -215,9 +219,9 @@ class MultipathSwap(TransformationPass):
 				prev_cpy.append(edge)
 				bfs_queue.append((w, prev_cpy))
 			# Also add a self-edge.
-			if len(prev) + self.coupling_map.distance_matrix[v, sink] <= self.max_swaps:
-				prev.append((v, v))
-				bfs_queue.append((v, prev))
+#			if len(prev) + self.coupling_map.distance_matrix[v, sink] <= self.max_swaps:
+#				prev.append((v, v))
+#				bfs_queue.append((v, prev))
 	
 		self.path_memoizer[memoizer_entry] = path_candidates
 		return path_candidates
@@ -225,60 +229,64 @@ class MultipathSwap(TransformationPass):
 	def _path_minfold(self, path, current_layout, post_primary_layer_view):
 		min_dist = -1
 		min_fold = []
+		latest_layout = current_layout
+		latest_fold = None
 		for i in range(len(path)):
-			fold = []
-			test_layout = current_layout.copy()
+			fold = [] if latest_fold is None else copy(latest_fold)
+			test_layout = latest_layout.copy()
 			# Perform all swaps except path[i].
-			# First, perform all swaps before path[i].
-			j = 0
-			while j < i:
-				p0, p1 = path[j]
-				fold.append(path[j])
-				test_layout[p0], test_layout[p1] = test_layout[p1], test_layout[p0]
-				j += 1
-			# Then all swaps after path[i] in REVERSE order.
-			j = len(path) - 1
-			while j > i:
-				p0, p1 = path[j]
-				fold.append(path[j])
-				test_layout[p0], test_layout[p1] = test_layout[p1], test_layout[p0]
-				j -= 1
+			# If i = 0, then perform fold that eliminates first swap.
+			if i == 0:
+				j = len(path) - 1
+				while j > i:
+					p0, p1 = path[j]
+					fold.append(path[j])
+					test_layout[p0], test_layout[p1] = test_layout[p1], test_layout[p0]
+					j -= 1
+			else:  # if i != 0, then undo last backwards swap in last fold, and perform forwards swap prior to folded swap. 
+				f0, f1 = path[i-1]
+				b0, b1 = path[i]
+				test_layout[b0], test_layout[b1] = test_layout[b1], test_layout[b0]  # Flip them back.
+				test_layout[f0], test_layout[f1] = test_layout[f1], test_layout[f0]  # Perform forward flip.
+				fold.pop()  # Remove last swap.
+				fold.insert(i-1, path[i-1])  # Insert new swap at beginning.
+			# Update latest layout.
+			latest_layout = test_layout
+			latest_fold = fold
 			# Compute distance to post primary layer.
 			dist = self._distf(post_primary_layer_view, test_layout)
 			if dist < min_dist or min_dist == -1:
 				min_dist = dist
 				min_fold = fold
-		size = 0
-		for (v0, v1) in path:
-			if v0 != v1:
-				size += 1
-		return min_fold, min_dist + len(path)*100
+		return min_fold, min_dist + len(path)
 
 	def _remap_gate_for_layout(self, op, layout, canonical_register):
 		new_op = copy(op)
 		new_op.qargs = [canonical_register[layout[x]] for x in op.qargs]
 		return new_op
 
-	def _verify_and_measure(self, soln, target_list, current_layout, post_primary_layer_view):
+	def _verify_and_measure(self, soln, target_list, current_layout, post_primary_layer_view, verify_only=False):
 		test_layout = current_layout.copy()
-		target_list_indicator = {x: 0 for x in target_list}
 		size = 0
 		for layer in soln:
 			for (p0, p1) in layer:
 				test_layout[p0], test_layout[p1] = test_layout[p1], test_layout[p0]
 				size += 1
-		for p0 in self.coupling_map.physical_qubits:
-			v0 = test_layout[p0]
-			for p1 in self.coupling_map.neighbors(p0):
-				v1 = test_layout[p1]
-				if (v0, v1) in target_list:
-					target_list_indicator[(v0, v1)] = 1
-				elif (v1, v0) in target_list:
-					target_list_indicator[(v1, v0)] = 1
-		max_allowed_size = sum(self.coupling_map.distance_matrix[current_layout[v0], current_layout[v1]]-1 for (v0, v1) in target_list)
-		dist = self._distf(post_primary_layer_view, test_layout)
+		max_allowed_size = 0
+		for (v0, v1) in target_list:
+			max_allowed_size += self.coupling_map.distance_matrix[current_layout[v0], current_layout[v1]] - 1
+			p0, p1 = test_layout[v0], test_layout[v1]
+			if self.coupling_map.distance_matrix[p0, p1] > 1:
+				return False, 0
+		if size > max_allowed_size:
+			return False, 0
+		# If we have gotten to this point, then our soln is good.
+		if verify_only:
+			dist = 0
+		else:
+			dist = self._distf(post_primary_layer_view, test_layout)
 
-		return all(target_list_indicator[x] == 1 for x in target_list) and size <= max_allowed_size, dist + 100*size
+		return True, dist + size
 
 	def _distf(self, post_primary_layer_view, test_layout):
 		dist = 0.0

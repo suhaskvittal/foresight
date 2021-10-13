@@ -53,7 +53,7 @@ class PathJoinTree:
 		queue = []
 		for (i, k) in enumerate(modified_indices):
 			self.leaves[k].data = _path_to_swap_collection(new_paths[i])
-			if self.leaves[k].parent is None:  # this is the root, just break.
+			if self.leaves[k].parent is None:  # this is the root
 				continue
 			self.leaves[k].parent.dirty = 1
 			queue.append(self.leaves[k].parent)
@@ -109,7 +109,24 @@ class PathJoinTree:
 		node.data = j_collection
 		node.conflict_matrix_line = j_conflict_matrix_line
 		node.conflict = conflict_bit
-		node.valid, node.score = verifier._verify_and_measure(j_collection, [target_list[i] for i in j_target_index_list], current_layout, post_primary_layer_view) 
+		if node.parent is None:
+			node.valid, node.score = verifier._verify_and_measure(
+				j_collection, 
+				[target_list[i] for i in j_target_index_list], 
+				current_layout, 
+				post_primary_layer_view, 
+				verify_only=False
+			) 
+		elif conflict_bit == 0:  # We know it is just AND of both valid bits.
+			node.valid = left.valid and right.valid
+		else:
+			node.valid, _ = verifier._verify_and_measure(
+				j_collection,
+				[target_list[i] for i in j_target_index_list],
+				current_layout,
+				post_primary_layer_view,
+				verify_only=True
+			) 
 		node.target_index_list = j_target_index_list
 
 class PathPriorityQueue:
@@ -124,12 +141,14 @@ class PathPriorityQueue:
 
 		i = len(pq.backing_array) >> 1
 		while i >= 1:
-			pq._downheap(i, conflict_matrix, heap_index)
+			pq._downheap(i, conflict_matrix, heap_index, update=False)
 			i -= 1
+		_update_conflict_matrix(pq.backing_array[1], conflict_matrix, heap_index)
 		return pq
 
 	def enqueue(self, path, score, conflict_matrix, heap_index):
 		self.backing_array.append((path, score))
+		orig_path, orig_score = self.backing_array[1]
 		# Update size.
 		self.size += 1
 		# Make sure heap property is maintained.
@@ -137,11 +156,12 @@ class PathPriorityQueue:
 	
 	def dequeue(self, conflict_matrix, heap_index):
 		root = self.backing_array[1]
-		# Replace root with last entry.
-		self.backing_array[1] = self.backing_array.pop()
 		self.size -= 1
-		# Make sure heap property is maintained.
-		self._downheap(1, conflict_matrix, heap_index)
+		# Replace root with last entry.
+		if self.size > 0:
+			self.backing_array[1] = self.backing_array.pop()
+			# Make sure heap property is maintained.
+			self._downheap(1, conflict_matrix, heap_index)
 		return root
 	
 	def peek(self):
@@ -160,7 +180,7 @@ class PathPriorityQueue:
 				return score
 		return -1
 	
-	def _upheap(self, from_index, conflict_matrix, heap_index):
+	def _upheap(self, from_index, conflict_matrix, heap_index, update=True):
 		path, score = self.backing_array[from_index]
 		curr_index = from_index
 		while curr_index > 1:
@@ -172,9 +192,10 @@ class PathPriorityQueue:
 			# Update index.
 			curr_index = curr_index >> 1
 		# Update conflict matrix
-		_update_conflict_matrix(self.backing_array[1], conflict_matrix, heap_index)
+		if update:
+			_update_conflict_matrix(self.backing_array[1], conflict_matrix, heap_index)
 
-	def _downheap(self, from_index, conflict_matrix, heap_index): 
+	def _downheap(self, from_index, conflict_matrix, heap_index, update=True): 
 		path, score = self.backing_array[from_index]
 		curr_index = from_index
 		while curr_index < self.size + 1:
@@ -194,7 +215,8 @@ class PathPriorityQueue:
 			else:
 				break
 		# Update conflict matrix
-		_update_conflict_matrix(self.backing_array[1], conflict_matrix, heap_index)
+		if update:
+			_update_conflict_matrix(self.backing_array[1], conflict_matrix, heap_index)
 
 def _update_conflict_matrix(entry, conflict_matrix, heap_index):
 	path, _ = entry
