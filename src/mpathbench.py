@@ -5,10 +5,12 @@
 
 from qiskit.circuit import QuantumCircuit, Qubit
 from qiskit.transpiler import CouplingMap, PassManager
+from qiskit.transpiler.exceptions import TranspilerError
 from qiskit.transpiler.basepasses import AnalysisPass
 from qiskit.transpiler.passes import *
 from qiskit.compiler import transpile
 from qiskit.visualization import plot_histogram
+from qiskit.converters import circuit_to_dag, dag_to_circuit
 from qiskit import Aer
 
 from timeit import default_timer as timer
@@ -22,6 +24,9 @@ import pandas as pd
 import numpy as np
 
 from sys import argv
+
+from os import listdir
+from os.path import isfile, join
 
 G_QISKIT_OPT_NONE = 0
 G_QISKIT_OPT_LIGHT = 1
@@ -63,94 +68,148 @@ qasmbench_large = [
 	'cc_n18'			# counterfeit coin
 ]
 
+zulehner = [f for f in listdir('benchmarks/zulehner') if isfile(join('benchmarks/zulehner', f))]
+
 class BenchmarkPass(AnalysisPass):
-	def __init__(self, sabre_routing_pass, mpath_routing_pass, runs=5):
+	def __init__(self, mpath_mapping_pass, mpath_routing_pass, runs=5):
 		super().__init__()
 
-		self.sabre_routing_pass = sabre_routing_pass
-		self.mpath_routing_pass = mpath_routing_pass
+		self.sabre_pass = PassManager([
+#			SabreLayout(coupling_map),
+#			ApplyLayout(),
+			SabreSwap(coupling_map, heuristic='decay'),
+			Unroller(G_QISKIT_GATE_SET)
+		])
+		self.mpath_pass = PassManager([
+#			mpath_mapping_pass,
+#			ApplyLayout(),
+			LayerViewPass(),
+			mpath_routing_pass,
+			Unroller(G_QISKIT_GATE_SET)
+		])
+		self.look_pass = PassManager([
+#			SabreLayout(coupling_map, routing_pass=LookaheadSwap(coupling_map)),
+#			ApplyLayout(),
+			LookaheadSwap(coupling_map, search_depth=4, search_width=4),
+			Unroller(G_QISKIT_GATE_SET)
+		])
 		self.runs = runs
 
 		self.benchmark_results = None
 	
 	def run(self, dag):
-		original_circuit_size = dag.size()
+		original_circuit = dag_to_circuit(dag)
+		original_circuit_size = original_circuit.size()
 
-		primary_layer_view, secondary_layer_view = self.property_set['primary_layer_view'], self.property_set['secondary_layer_view']
-		basis_pass = Unroller(G_QISKIT_GATE_SET)
+		self.benchmark_results = {
+			'SABRE CNOTs': 0.0,
+			'MPATH CNOTs': 0.0,
+			'LOOK CNOTs': 0.0,
+			'SABRE Depth': 0.0,
+			'MPATH Depth': 0.0,
+			'LOOK Depth': 0.0,
+			'SABRE Time': 0.0,
+			'MPATH Time': 0.0,
+			'LOOK Time': 0.0
+		}
 
-		sabre_swaps, mpath_swaps, sabre_depth, mpath_depth, sabre_time, mpath_time = 0, 0, 0, 0, 0, self.property_set['bench_layer_view']
+		sabre_swaps, mpath_swaps, look_swaps = 0, 0, 0
+		sabre_depth, mpath_depth, look_depth = 0, 0, 0
+		sabre_time, mpath_time, look_time = 0, 0, 0
+		sabre_swaps, mpath_swaps, sabre_depth, mpath_depth, sabre_time, mpath_time = 0, 0, 0, 0, 0, 0
 		for _ in range(self.runs):
-			plv_cpy, slv_cpy = deepcopy(primary_layer_view), deepcopy(secondary_layer_view)
 			# Run dag on both passes. 
 			# SABRE
 			start = timer()
-			sabre_dag = self.sabre_routing_pass.run(dag)
+			sabre_circ = self.sabre_pass.run(original_circuit)
 			end = timer()
-			sabre_time += (end - start) / self.runs
+			self.benchmark_results['SABRE CNOTs'] += (sabre_circ.size() - original_circuit_size) / self.runs
+			self.benchmark_results['SABRE Depth'] += (sabre_circ.depth()) / self.runs
+			self.benchmark_results['SABRE Time'] += (end - start) / self.runs
 			# MPATH
 			start = timer()
-			mpath_dag = self.mpath_routing_pass.run(dag, primary_layer_view=plv_cpy, secondary_layer_view=slv_cpy)
+			mpath_circ = self.mpath_pass.run(original_circuit)
 			end = timer()
-			mpath_time += (end - start) / self.runs
-			# Unroll SWAPs to CNOTs 
-			sabre_dag, mpath_dag = basis_pass.run(sabre_dag), basis_pass.run(mpath_dag)
-			# Compare dags.
-			if mpath_dag.size() < original_circuit_size:
-				sabre_swaps, mpath_swaps, sabre_depth, mpath_depth, sabre_time, mpath_time = -1, -1, -1, -1, -1, -1
-				break
-			sabre_swaps += (sabre_dag.size() - original_circuit_size) / self.runs
-			mpath_swaps += (mpath_dag.size() - original_circuit_size) / self.runs
-			sabre_depth += (sabre_dag.depth()) / self.runs
-			mpath_depth += (mpath_dag.depth()) / self.runs
-		self.benchmark_results = [sabre_swaps, mpath_swaps, sabre_depth, mpath_depth, sabre_time, mpath_time]
+			if self.benchmark_results['MPATH CNOTs'] < 0 or mpath_circ.size() < original_circuit_size:
+				self.benchmark_results['MPATH CNOTs'] = -1.0
+				self.benchmark_results['MPATH Depth'] = -1.0
+				self.benchmark_results['MPATH Time'] = -1.0
+			else:
+				self.benchmark_results['MPATH CNOTs'] += (mpath_circ.size() - original_circuit_size) / self.runs
+				self.benchmark_results['MPATH Depth'] += (mpath_circ.depth()) / self.runs
+				self.benchmark_results['MPATH Time'] += (end - start) / self.runs
+			# LOOK
+#			try:
+#				start = timer()
+#				look_circ = self.look_pass.run(original_circuit)
+#				end = timer()
+#				if self.benchmark_results['LOOK CNOTs'] >= 0:
+#					self.benchmark_results['LOOK CNOTs'] += (look_circ.size() - original_circuit_size) / self.runs
+#					self.benchmark_results['LOOK Depth'] += (look_circ.depth()) / self.runs
+#					self.benchmark_results['LOOK Time'] += (end - start) / self.runs
+#			except TranspilerError:
+#				self.benchmark_results['LOOK CNOTs'] = -1.0
+#				self.benchmark_results['LOOK Depth'] = -1.0
+#				self.benchmark_results['LOOK Time'] = -1.0
 
 def b_qasmbench(coupling_map, dataset='medium', out_file='qasmbench.csv', max_swaps=10, max_lookahead=5, runs=5):
 	sabre_routing_pass = SabreSwap(coupling_map)
 	mpath_routing_pass = MultipathSwap(coupling_map, max_swaps=max_swaps, max_lookahead=max_lookahead)
 
 	basis_pass = Unroller(G_QISKIT_GATE_SET)
-	apply_layout_pass = ApplyLayout()
-	sabre_mapping_pass = SabreLayout(coupling_map, routing_pass=None)
-	layer_view_pass = LayerViewPass()
 
-	benchmark_pass = BenchmarkPass(sabre_routing_pass, mpath_routing_pass, runs=runs)
+	layout_passes = [
+		SabreLayout(coupling_map),
+		TrivialLayout(coupling_map)
+	]
 
-	benchmark_pm = PassManager([basis_pass, sabre_mapping_pass, apply_layout_pass, layer_view_pass, benchmark_pass]) 
-		
-	data = {
-		'SABRE Swaps': [],
-		'MPATH Swaps': [],
-		'SABRE Depth': [],
-		'MPATH Depth': [],
-		'SABRE Time': [],
-		'MPATH Time': []
-	}
+	layout_pass_names = ['SABRE', 'Trivial']
 
-	benchmark_suite = qasmbench_medium if dataset=='medium' else qasmbench_large
+	data = {}
+	for (i, mpath_mapping_pass) in enumerate(layout_passes):
+		benchmark_pass = BenchmarkPass(mpath_mapping_pass, mpath_routing_pass, runs=runs)
+		benchmark_pm = PassManager([
+			basis_pass, 
+			mpath_mapping_pass, 
+			ApplyLayout(), 
+			benchmark_pass
+		]) 
 
-	for qb_file in benchmark_suite:
-		circ = QuantumCircuit.from_qasm_file('benchmarks/qasmbench/%s/%s/%s.qasm' % (dataset, qb_file, qb_file))	
-		_pad_circuit_to_fit(circ, coupling_map)
-
-		benchmark_pm.run(circ)
-		sabre_swaps, mpath_swaps, sabre_depth, mpath_depth, sabre_time, mpath_time = benchmark_pass.benchmark_results 	
-		if sabre_swaps == -1:
-			mpath_swaps = 'N/A'
-			mpath_depth = 'N/A'
-			mpath_time = 'N/A'
-			print('[%s]\n\tN/A' % qb_file)
+		sub_data = {}
+		if dataset == 'zulehner':
+			benchmark_suite = zulehner
+		elif dataset == 'medium':
+			benchmark_suite = qasmbench_medium
 		else:
-			print('[%s]\n\tSABRE Swaps: %.3f\n\tMultipath Swaps: %.3f\n\tSABRE Depth: %.3f\n\tMultipath Depth: %.3f\n\tSABRE Time: %.3f\n\tMultipath Time: %.3f'
-					% (qb_file, sabre_swaps, mpath_swaps, sabre_depth, mpath_depth, sabre_time, mpath_time))
-		data['SABRE Swaps'].append(sabre_swaps)
-		data['MPATH Swaps'].append(mpath_swaps)
-		data['SABRE Depth'].append(sabre_depth)
-		data['MPATH Depth'].append(mpath_depth)
-		data['SABRE Time'].append(sabre_time)
-		data['MPATH Time'].append(mpath_time)
-	
-	df = pd.DataFrame(data=data, index=benchmark_suite)
+			benchmark_suite = qasmbench_large
+
+		used_benchmarks = []
+		for qb_file in benchmark_suite:
+			if dataset == 'zulehner':
+				circ = QuantumCircuit.from_qasm_file('benchmarks/zulehner/%s' % qb_file)
+			else:
+				circ = QuantumCircuit.from_qasm_file('benchmarks/qasmbench/%s/%s/%s.qasm' % (dataset, qb_file, qb_file))	
+			if circ.depth() > 3000:
+				continue
+			used_benchmarks.append(qb_file)
+			_pad_circuit_to_fit(circ, coupling_map)
+
+			print('[%s]' % qb_file)
+
+			benchmark_pm.run(circ)
+			benchmark_results = benchmark_pass.benchmark_results 	
+			if benchmark_results['SABRE CNOTs'] == -1:
+				print('\tN/A')
+			else:
+				for x in benchmark_results:
+					print('\t%s: %.3f' % (x, benchmark_results[x]))
+			for x in benchmark_results:
+				if x not in sub_data:
+					sub_data[x] = []
+				sub_data[x].append(benchmark_results[x])
+		for x in sub_data:
+			data['[%s] %s' % (layout_pass_names[i], x)] = sub_data[x] 
+	df = pd.DataFrame(data=data, index=used_benchmarks)
 	df.to_csv(out_file)
 	
 if __name__ == '__main__':
