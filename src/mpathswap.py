@@ -17,6 +17,8 @@ from copy import copy, deepcopy
 from ppc import PriorityPathCollection
 from dstruct import SumTreeNode
 
+from collections import deque
+
 # Shallow Solve Policies
 POLICY_SOLVE_BY_LAYER = 0
 POLICY_SOLVE_MAXIMAL = 1
@@ -46,27 +48,39 @@ class MultipathSwap(TransformationPass):
 			layer_view_pass = LayerViewPass();
 			layer_view_pass.run(dag)
 			primary_layer_view, secondary_layer_view = layer_view_pass.property_set['primary_layer_view'], layer_view_pass.property_set['secondary_layer_view']
+		# Convert to deque's for lower latency
+		primary_layer_view = deque(primary_layer_view)
+		secondary_layer_view = deque(secondary_layer_view)
+
 		solutions = self.deep_solve(
 			primary_layer_view, 
 			secondary_layer_view, 
-			[(current_layout, mapped_dag, set())], 
+			[(current_layout, mapped_dag, 0, set())], 
 			canonical_register, 
-#			shallow_solve_policy=POLICY_SOLVE_MAXIMAL,
-			fake_run=fake_run
+			shallow_solve_policy=POLICY_SOLVE_MAXIMAL,
 		)
 
-		if len(solutions) == 0:
-			return mapped_dag
-
 		# Choose solution with minimum depth.
-		min_dag = None
+		min_solution = None
 		min_layout = None
-		for (final_layout, x, _) in solutions:
-			if min_dag is None or (x.size() < min_dag.size() or (x.size() == min_dag.size() and x.depth() < min_dag.depth())):
-				min_dag = x
-				min_layout = final_layout
+		min_size = -1
+		min_depth = -1
+		for (layout, soln, size, _) in solutions:
+			depth = len(soln)
+			if min_solution is None or (size < min_size) or (size == min_size and depth < min_depth):
+				min_layout = layout
+				min_solution = soln
+				min_size = size
+				min_depth = depth
 		self.property_set['final_layout'] = min_layout
-		return min_dag
+
+		if fake_run:
+			return None	
+		# Else build the dag.
+		for layer in min_solution:
+			for node in layer:
+				mapped_dag.apply_operation_back(op=node.op, qargs=node.qargs, cargs=node.cargs)
+		return mapped_dag
 	
 	def deep_solve(
 		self, 
@@ -75,7 +89,6 @@ class MultipathSwap(TransformationPass):
 		base_solver_queue, 
 		canonical_register, 
 		shallow_solve_policy=POLICY_SOLVE_BY_LAYER,
-		fake_run=False
 	):
 		if len(primary_layer_view) == 0:
 			return base_solver_queue
@@ -83,8 +96,8 @@ class MultipathSwap(TransformationPass):
 		# Build tree of output layers.
 		solver_queue = []
 		leaves = []
-		for (i, (base_layout, base_dag, completed_set)) in enumerate(base_solver_queue):
-			root_node = SumTreeNode(base_dag, 0, None, [])  # Other nodes won't keep a DAG.
+		for (i, (base_layout, base_output_layers, base_sum, completed_set)) in enumerate(base_solver_queue):
+			root_node = SumTreeNode(base_output_layers, base_sum, None, [])  
 			leaves.append(root_node)
 			solver_queue.append((base_layout, i, completed_set))
 		look = 0
@@ -98,7 +111,7 @@ class MultipathSwap(TransformationPass):
 				# Find parent corresponding to parent id.
 				if completed_set is not None:
 					completed_set = copy(completed_set)
-				solutions, minus_look = self.shallow_solve(
+				solutions = self.shallow_solve(
 					primary_layer_view,
 					secondary_layer_view,
 					current_layout,
@@ -106,7 +119,6 @@ class MultipathSwap(TransformationPass):
 					policy=shallow_solve_policy,
 					completed_set=completed_set
 				)
-				look -= minus_look
 				# Apply solutions non-deterministically to current_dag.
 				for (i, (output_layers, new_layout)) in enumerate(solutions):
 					# Create node for each candidate solution.
@@ -116,8 +128,8 @@ class MultipathSwap(TransformationPass):
 					next_solver_queue.append((new_layout, len(next_leaves) - 1, completed_set))
 			solver_queue = next_solver_queue
 			leaves = next_leaves
-			primary_layer_view.pop(0)
-			secondary_layer_view.pop(0)
+			primary_layer_view.popleft()
+			secondary_layer_view.popleft()
 			look += 1
 		# Now, we simply check the leaves of the output layer tree. We select the leaf with the minimum sum.
 		min_leaves = []
@@ -125,32 +137,21 @@ class MultipathSwap(TransformationPass):
 		for (i, leaf) in enumerate(leaves):
 			layout, _, completed_set = solver_queue[i]
 			if min_sum < 0 or leaf.sum_data < min_sum:
-				min_leaves = [(leaf, layout, completed_set)]
+				min_leaves = [(leaf, layout, leaf.sum_data, completed_set)]
 				min_sum = leaf.sum_data
 			elif leaf.sum_data == min_sum:
-				min_leaves.append((leaf, layout, completed_set))
+				min_leaves.append((leaf, layout, leaf.sum_data, completed_set))
 		# Now that we know the best leaves, we simply just need to build the corresponding dags.
 		# Traverse up the leaves -- there is only one path to a root.
 		min_leaves = min_leaves[:self.solution_cap]
 		min_solutions = []
-		for (leaf, layout, completed_set) in min_leaves:
-			output_layer_collection = []
+		for (leaf, layout, leaf_sum, completed_set) in min_leaves:
+			output_layer_deque = deque([])
 			curr = leaf
 			while curr.parent != None:
-				output_layer_collection.append(curr.obj_data)
+				output_layer_deque.extendleft(curr.obj_data)
 				curr = curr.parent
-			# Now we should be at the root, copy the DAG in the root's obj_data.
-			if fake_run:
-				mapped_dag = curr.obj_data
-			else:
-				mapped_dag = deepcopy(curr.obj_data)
-				for i in range(len(output_layer_collection)):
-					# Apply in reverse order of the collection (as collection was built in reverse order).
-					output_layers = output_layer_collection[-(i+1)]
-					for layer in output_layers:
-						for node in layer:
-							mapped_dag.apply_operation_back(node.op, qargs=node.qargs, cargs=node.cargs)
-			min_solutions.append((layout, mapped_dag, completed_set))
+			min_solutions.append((layout, output_layer_deque, leaf_sum, completed_set))
 
 		return self.deep_solve(primary_layer_view, secondary_layer_view, min_solutions, canonical_register, shallow_solve_policy=shallow_solve_policy)
 
@@ -171,118 +172,73 @@ class MultipathSwap(TransformationPass):
 		target_list = []
 		post_ops = []
 		target_to_op = {}
-		# Depending on the policy, we will execute differently.
-		if policy == POLICY_SOLVE_BY_LAYER:
-			# Only execute operations in current layer.
-			# Define post primary layer view
-			if len(primary_layer_view) == 1:
-				post_primary_layer_view = []
-			else:
-				post_primary_layer_view = primary_layer_view[1:]
-			# Process operations in layer
-			for op in secondary_layer_view[0]:
+		# Only execute operations in current layer.
+		# Define post primary layer view
+		if len(primary_layer_view) == 1:
+			post_primary_layer_view = []
+		else:
+			post_primary_layer_view = list(primary_layer_view)[1:]
+		# Process operations in layer
+		for op in secondary_layer_view[0]:
+			output_layers[0].append(self._remap_gate_for_layout(op, current_layout, canonical_register))
+		front_layer = primary_layer_view[0]
+		for op in front_layer:  
+			q0, q1 = op.qargs
+			# Filter out all operations that are currently adjacent.
+			if self.coupling_map.graph.has_edge(current_layout[q0], current_layout[q1]):
 				output_layers[0].append(self._remap_gate_for_layout(op, current_layout, canonical_register))
-			front_layer = primary_layer_view[0]
-			for op in front_layer:  
-				q0, q1 = op.qargs
-				# Filter out all operations that are currently adjacent.
-				if self.coupling_map.graph.has_edge(current_layout[q0], current_layout[q1]):
-					output_layers[0].append(self._remap_gate_for_layout(op, current_layout, canonical_register))
-				else:  # Otherwise, get path candidates and place it in path_collection_list.
-					path_collection_list.append(self.path_find_and_fold(q0, q1, post_primary_layer_view, current_layout))
-					post_ops.append(op)
-					target_list.append((q0, q1))
-					target_to_op[(q0, q1)] = op
-		elif policy == POLICY_SOLVE_MAXIMAL: 
-			# Execute all executable operations, even beyond front layer.
-			execution_list = []
-			next_op_layer = []
-
-			unsat_qubit_list = []  # Easier to keep track of unsatisfied qubits.
-			any_satisfied = True
-			curr_layer_index = 0
-			while any_satisfied and curr_layer_index < len(primary_layer_view):
-				if curr_layer_index >= len(output_layers):
-					output_layers.append([])
-				any_satisfied = False
-				curr_p_layer = primary_layer_view[curr_layer_index]
-				curr_s_layer = secondary_layer_view[curr_layer_index]
-				next_ops = []
-				for op in curr_s_layer:
-					if op in completed_set:
-						continue
-					# Apply operations in secondary qubit layer that can be executed (prior primary layer ancestors must have been satisfied).
-					if not any(q in unsat_qubit_list for q in op.qargs):
-						output_layers[curr_layer_index].append(self._remap_gate_for_layout(op, current_layout, canonical_register))
-						any_satisfied=True
-						completed_set.add(op)
-					else:
-						for q in op.qargs:
-							if q not in unsat_qubit_list:
-								unsat_qubit_list.append(q)
-				for op in curr_p_layer:
-					if op in completed_set:
-						continue
-					q0, q1 = op.qargs
-					if q0 in unsat_qubit_list and q1 in unsat_qubit_list:
-						continue
-					if q0 in unsat_qubit_list and q1 not in unsat_qubit_list:
-						unsat_qubit_list.append(q1)
-						next_ops.append(op)
-						continue
-					if q1 in unsat_qubit_list and q0 not in unsat_qubit_list:
-						unsat_qubit_list.append(q0)
-						next_ops.append(op)
-						continue
-					# Only consider if qubits are satisfied.
-					if self.coupling_map.graph.has_edge(current_layout[q0], current_layout[q1]):
-						output_layers[curr_layer_index].append(self._remap_gate_for_layout(op, current_layout, canonical_register))
-						any_satisfied = True
-						completed_set.add(op)
-					else:
-						execution_list.append(op)
-						# Update unsatisfiability list
-						unsat_qubit_list.append(q0)
-						unsat_qubit_list.append(q1)
-				next_op_layer.append(next_ops)
-				curr_layer_index += 1
-			# Define post primary layers.
-			if len(primary_layer_view) == 1:
-				post_primary_layer_view = []
-			else:
-				post_primary_layer_view = next_op_layer  # Unvisited operations in layers 0 to curr_layer_index
-				post_primary_layer_view.extend(primary_layer_view[curr_layer_index:])
-			# Consume execution list
-			for op in execution_list:
-				q0, q1 = op.qargs
+			else:  # Otherwise, get path candidates and place it in path_collection_list.
 				path_collection_list.append(self.path_find_and_fold(q0, q1, post_primary_layer_view, current_layout))
 				post_ops.append(op)
 				target_list.append((q0, q1))
 				target_to_op[(q0, q1)] = op
-			starting_output_layer = curr_layer_index
 		# Build PPC and get candidate list.
 		if len(path_collection_list) == 0:
-			return [(output_layers, current_layout)], 0
+			return [(output_layers, current_layout)] 
 		#print([(q0.index, q1.index) for (q0, q1) in target_list])
 		ppc = PriorityPathCollection(path_collection_list, len(self.coupling_map.physical_qubits), len(path_collection_list))
 		candidate_list, suggestions = ppc.find_and_join(self, target_list, current_layout, post_primary_layer_view)
 		if candidate_list is None:  # We failed, take the suggestions.
-			added_layers = 0
+			tmp_pl_view = copy(primary_layer_view)
+			tmp_sl_view = copy(secondary_layer_view)
+			# Remove top layer from both views.
+			tmp_pl_view.popleft()
+			tmp_sl_view.popleft()
+			# Idea: run shallow solve on suggestions, perform cross product on results.
+			target_lists = []
 			for index_list in suggestions:
 				if len(index_list) == 0:
 					continue
-				added_layers += 1
 				target_sub_list = [target_list[i] for i in index_list]
-				# Create new primary layer and secondary layer.
-				primary_layer_view.insert(1, [target_to_op[target] for target in target_sub_list]) 
-				secondary_layer_view.insert(1, [])
-			return [(output_layers, current_layout)], added_layers
+				target_lists.append(target_sub_list)
+				tmp_pl_view.appendleft([target_to_op[target] for target in target_sub_list])
+				tmp_sl_view.appendleft([])
+			solutions = [(output_layers, current_layout)]
+			while target_lists:
+				target_sub_list = target_lists.pop()
+				next_solutions = []
+				for (prev_layers, prev_layout) in solutions:
+					solution_list = self.shallow_solve(
+						tmp_pl_view,
+						tmp_sl_view,
+						prev_layout,
+						canonical_register,
+						policy=policy,
+						completed_set=completed_set
+					)
+					for (layers, layout) in solution_list:
+						prev_layers_cpy = copy(prev_layers)
+						prev_layers_cpy.extend(layers)
+						next_solutions.append((prev_layers_cpy, layout))
+				tmp_pl_view.popleft()
+				tmp_sl_view.popleft()
+				solutions = next_solutions
+			return solutions
+				
 		# Compute all solutions.
 		solutions = []
 		
-		#print('Solution for', [(q0.index, q1.index) for (q0,q1) in target_list])
 		for soln in candidate_list:
-		#	print('\t', soln)
 			output_layers_cpy = deepcopy(output_layers)
 			new_layout = current_layout.copy()
 			for (i, layer) in enumerate(soln):  # Perform the requisite swaps.
@@ -308,7 +264,7 @@ class MultipathSwap(TransformationPass):
 				if completed_set:
 					completed_set.add(op)
 			solutions.append((output_layers_cpy, new_layout))  # Save layers to apply to DAG and corresponding layout.
-		return solutions, 0
+		return solutions
 
 	def path_find_and_fold(self, v0, v1, post_primary_layer_view, current_layout):
 		p0, p1 = current_layout[v0], current_layout[v1]
@@ -325,11 +281,11 @@ class MultipathSwap(TransformationPass):
 	
 		path_candidates = []
 
-		bfs_queue = [(source, [])]
+		bfs_queue = deque([(source, [])])
 		# Perform modified DFS to find paths upto length "max_swaps".
 		# We will not mark vertices as visited.
 		while bfs_queue and len(path_candidates) < self.max_path_limit:
-			v, prev = bfs_queue.pop(0)	
+			v, prev = bfs_queue.popleft()	
 			if v == sink:
 				path_candidates.append(prev)  # We have found the sink, add the corresponding path.
 				continue
@@ -401,7 +357,7 @@ class MultipathSwap(TransformationPass):
 			if not self.coupling_map.graph.has_edge(p0, p1):
 				return False, 0
 		#print(size, max_allowed_size, [(q0.index, q1.index) for (q0, q1) in target_list])
-		max_allowed_size /= len(target_list)
+		max_allowed_size = max_allowed_size/len(target_list)
 		if size > max_allowed_size:
 			return False, 0
 		# If we have gotten to this point, then our soln is good.

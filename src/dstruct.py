@@ -100,7 +100,9 @@ class PathJoinTree:
 					visited.add(v1)
 				remaining_swaps = []	
 				for (v0, v1) in right_layer:
-					if v0 in visited or v1 in visited:
+					if (v0, v1) in joined_layer:
+						continue
+					elif v0 in visited or v1 in visited:
 						remaining_swaps.append((v0, v1))
 					else:
 						joined_layer.append((v0, v1))
