@@ -8,6 +8,8 @@ from qiskit.transpiler.layout import Layout
 from qiskit.dagcircuit import DAGNode
 from qiskit.circuit.library import CXGate, SwapGate, Measure
 
+from layerview import LayerViewPass
+
 import numpy as np
 
 from copy import copy, deepcopy
@@ -20,7 +22,7 @@ POLICY_SOLVE_BY_LAYER = 0
 POLICY_SOLVE_MAXIMAL = 1
 
 class MultipathSwap(TransformationPass):
-	def __init__(self, coupling_map, seed=None, max_swaps=5, max_path_limit=128, max_lookahead=16, solution_cap=4, edge_weights=None):
+	def __init__(self, coupling_map, seed=None, max_swaps=5, max_path_limit=128, max_lookahead=16, solution_cap=32, edge_weights=None):
 		super().__init__()
 
 		self.coupling_map = coupling_map		
@@ -32,19 +34,25 @@ class MultipathSwap(TransformationPass):
 
 		self.path_memoizer = {}
 			
-	def run(self, dag, primary_layer_view=None, secondary_layer_view=None):
+	def run(self, dag, primary_layer_view=None, secondary_layer_view=None, fake_run=False):
 		mapped_dag = dag._copy_circuit_metadata()
 		canonical_register = dag.qregs["q"]
 		current_layout = Layout.generate_trivial_layout(canonical_register)
 		
 		if primary_layer_view is None or secondary_layer_view is None:
 			primary_layer_view, secondary_layer_view = self.property_set['primary_layer_view'], self.property_set['secondary_layer_view']
+		# If still None, generate it ourselves.
+		if primary_layer_view is None or secondary_layer_view is None:
+			layer_view_pass = LayerViewPass();
+			layer_view_pass.run(dag)
+			primary_layer_view, secondary_layer_view = layer_view_pass.property_set['primary_layer_view'], layer_view_pass.property_set['secondary_layer_view']
 		solutions = self.deep_solve(
 			primary_layer_view, 
 			secondary_layer_view, 
 			[(current_layout, mapped_dag, set())], 
 			canonical_register, 
-		#	shallow_solve_policy=POLICY_SOLVE_MAXIMAL
+#			shallow_solve_policy=POLICY_SOLVE_MAXIMAL,
+			fake_run=fake_run
 		)
 
 		if len(solutions) == 0:
@@ -52,9 +60,12 @@ class MultipathSwap(TransformationPass):
 
 		# Choose solution with minimum depth.
 		min_dag = None
-		for (_, x, _) in solutions:
+		min_layout = None
+		for (final_layout, x, _) in solutions:
 			if min_dag is None or (x.size() < min_dag.size() or (x.size() == min_dag.size() and x.depth() < min_dag.depth())):
 				min_dag = x
+				min_layout = final_layout
+		self.property_set['final_layout'] = min_layout
 		return min_dag
 	
 	def deep_solve(
@@ -63,7 +74,8 @@ class MultipathSwap(TransformationPass):
 		secondary_layer_view, 
 		base_solver_queue, 
 		canonical_register, 
-		shallow_solve_policy=POLICY_SOLVE_BY_LAYER
+		shallow_solve_policy=POLICY_SOLVE_BY_LAYER,
+		fake_run=False
 	):
 		if len(primary_layer_view) == 0:
 			return base_solver_queue
@@ -128,13 +140,16 @@ class MultipathSwap(TransformationPass):
 				output_layer_collection.append(curr.obj_data)
 				curr = curr.parent
 			# Now we should be at the root, copy the DAG in the root's obj_data.
-			mapped_dag = deepcopy(curr.obj_data)
-			for i in range(len(output_layer_collection)):
-				# Apply in reverse order of the collection (as collection was built in reverse order).
-				output_layers = output_layer_collection[-(i+1)]
-				for layer in output_layers:
-					for node in layer:
-						mapped_dag.apply_operation_back(node.op, qargs=node.qargs, cargs=node.cargs)
+			if fake_run:
+				mapped_dag = curr.obj_data
+			else:
+				mapped_dag = deepcopy(curr.obj_data)
+				for i in range(len(output_layer_collection)):
+					# Apply in reverse order of the collection (as collection was built in reverse order).
+					output_layers = output_layer_collection[-(i+1)]
+					for layer in output_layers:
+						for node in layer:
+							mapped_dag.apply_operation_back(node.op, qargs=node.qargs, cargs=node.cargs)
 			min_solutions.append((layout, mapped_dag, completed_set))
 
 		return self.deep_solve(primary_layer_view, secondary_layer_view, min_solutions, canonical_register, shallow_solve_policy=shallow_solve_policy)
@@ -265,7 +280,9 @@ class MultipathSwap(TransformationPass):
 		# Compute all solutions.
 		solutions = []
 		
+		#print('Solution for', [(q0.index, q1.index) for (q0,q1) in target_list])
 		for soln in candidate_list:
+		#	print('\t', soln)
 			output_layers_cpy = deepcopy(output_layers)
 			new_layout = current_layout.copy()
 			for (i, layer) in enumerate(soln):  # Perform the requisite swaps.
@@ -299,8 +316,7 @@ class MultipathSwap(TransformationPass):
 			return []
 		# Get path candidates from _path_select.
 		path_candidates = self._path_select(p0, p1)
-		# Now, we must fold the candidates and choose their minfolds.
-		return [self._path_minfold(c, current_layout, post_primary_layer_view) for c in path_candidates]
+		return [self._path_minfold(path, current_layout, post_primary_layer_view) for path in path_candidates]
 	
 	def _path_select(self, source, sink):
 		memoizer_entry = (source, sink) if source < sink else (sink, source)
@@ -362,7 +378,7 @@ class MultipathSwap(TransformationPass):
 			if dist < min_dist or min_dist == -1:
 				min_dist = dist
 				min_fold = fold
-		return min_fold, min_dist + len(path)
+		return min_fold, np.log10(min_dist + len(path))
 
 	def _remap_gate_for_layout(self, op, layout, canonical_register):
 		new_op = copy(op)
@@ -370,6 +386,8 @@ class MultipathSwap(TransformationPass):
 		return new_op
 
 	def _verify_and_measure(self, soln, target_list, current_layout, post_primary_layer_view, verify_only=False):
+		if len(target_list) == 0:
+			return True, 0
 		test_layout = current_layout.copy()
 		size = 0
 		for layer in soln:
@@ -378,10 +396,12 @@ class MultipathSwap(TransformationPass):
 				size += 1
 		max_allowed_size = 0
 		for (v0, v1) in target_list:
-			max_allowed_size += self.coupling_map.distance_matrix[current_layout[v0], current_layout[v1]] - 1
+			max_allowed_size += self.coupling_map.distance_matrix[current_layout[v0], current_layout[v1]]
 			p0, p1 = test_layout[v0], test_layout[v1]
-			if self.coupling_map.distance_matrix[p0, p1] > 1:
+			if not self.coupling_map.graph.has_edge(p0, p1):
 				return False, 0
+		#print(size, max_allowed_size, [(q0.index, q1.index) for (q0, q1) in target_list])
+		max_allowed_size /= len(target_list)
 		if size > max_allowed_size:
 			return False, 0
 		# If we have gotten to this point, then our soln is good.
@@ -390,26 +410,18 @@ class MultipathSwap(TransformationPass):
 		else:
 			dist = self._distf(post_primary_layer_view, test_layout)
 
-		return True, dist + size
+		return True, np.log10(dist + size)
 
 	def _distf(self, post_primary_layer_view, test_layout):
 		dist = 0.0
-		visited_dict = {}
 		num_ops = 0
-		for r in range(0, min(len(post_primary_layer_view), 20+1)):
+		for r in range(0, min(len(post_primary_layer_view), 100+1)):
 			post_layer = post_primary_layer_view[r]
 			sub_sum = 0.0
 			for op in post_layer:
 				num_ops += 1
 				v0, v1 = op.qargs
-				if v0 not in visited_dict:
-					visited_dict[v0] = 1
-				if v1 not in visited_dict:
-					visited_dict[v1] = 1
-				modifier = min(visited_dict[v0], visited_dict[v1])
-				sub_sum += self.coupling_map.distance_matrix[test_layout[v0], test_layout[v1]] / modifier
-				visited_dict[v0] += 1
-				visited_dict[v1] += 1 
+				sub_sum += self.coupling_map.distance_matrix[test_layout[v0], test_layout[v1]] / (r+1)
 			dist += sub_sum 
 		return dist/(1+num_ops)
 

@@ -92,11 +92,11 @@ def _bench_and_cmp(ref_circ, coupling_map, pm0, pm1, pm2, runs=100, show=False):
 		mean_depth2 += circ2.depth() / runs
 		mean_t1 += time1 / runs
 		mean_t2 += time2 / runs
-	if runs == 1 and show:
+#	if runs == 1 and show:
 #		base_counts = BACKEND.run(ref_circ, shots=1024).result().get_counts(ref_circ)
 #		sabre_counts = BACKEND.run(circ1, shots=1024).result().get_counts(circ1)
 #		mpath_counts = BACKEND.run(circ2, shots=1024).result().get_counts(circ2)
-		draw(ref_circ)
+#		draw(ref_circ)
 		draw(circ0)
 		draw(circ1)
 		draw(circ2)
@@ -111,8 +111,8 @@ if __name__ == '__main__':
 #	circ = QuantumCircuit.from_qasm_file('benchmarks/BV-10.qasm')
 #	circ = QuantumCircuit.from_qasm_file('benchmarks/cnot_test_n5.qasm')
 
-#	coupling_map = CouplingMap.from_grid(n, m)
-	coupling_map = CouplingMap(ibm_toronto)
+	coupling_map = CouplingMap.from_grid(n, m)
+#	coupling_map = CouplingMap(ibm_toronto)
 	#coupling_map = CouplingMap.from_line(n)
 	#coupling_map = CouplingMap.from_ring(n)
 

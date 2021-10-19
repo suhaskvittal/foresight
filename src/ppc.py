@@ -13,9 +13,8 @@ class PriorityPathCollection:
 	def __init__(self, path_collection_list, num_vertices, num_sources):
 		self.num_vertices = num_vertices
 		self.num_sources = num_sources
-		self.conflict_matrix = [[0 for _ in range(num_vertices)] for _ in range(num_sources)]
 		self.path_collection_list = path_collection_list
-		self.pqueues = [PathPriorityQueue.buildheap(path_collection_list[i], self.conflict_matrix, i) for i in range(num_sources)]
+		self.pqueues = [PathPriorityQueue.buildheap(path_collection_list[i]) for i in range(num_sources)]
 		self.reduceable = [i for i in range(num_sources)]
 	
 	def find_and_join(self, verifier, target_list, current_layout, post_primary_layer_view, runs=1000):
@@ -27,7 +26,7 @@ class PriorityPathCollection:
 		if len(target_list) == 1:
 			pq = self.pqueues[0]
 			while pq.size > 0:
-				path, s = pq.dequeue(self.conflict_matrix, 0)
+				path, s = pq.dequeue()
 				if min_score < 0 or s < min_score:
 					min_score = s
 					min_collection_list.append(_path_to_swap_collection(path))
@@ -38,7 +37,7 @@ class PriorityPathCollection:
 			return min_collection_list, None
 		
 		soln_hash = set()
-		path_join_tree = PathJoinTree([pq.peek()[0] for pq in self.pqueues], self.conflict_matrix, verifier, target_list, current_layout, post_primary_layer_view)
+		path_join_tree = PathJoinTree([pq.peek()[0] for pq in self.pqueues], verifier, target_list, current_layout, post_primary_layer_view)
 		for r in range(runs):
 			root = path_join_tree.root
 			collection = root.data
@@ -73,7 +72,7 @@ class PriorityPathCollection:
 			suggestions = []
 			while dfs_stack:
 				node = dfs_stack.pop()
-				if not node.valid or node.conflict == 1:
+				if not node.valid:
 					dfs_stack.append(node.left_child)
 					dfs_stack.append(node.right_child)
 				else:
@@ -83,15 +82,14 @@ class PriorityPathCollection:
 		return min_collection_list, None
 	
 	def reset(self):
-		self.conflict_matrix = [[0 for _ in range(self.num_vertices)] for _ in range(self.num_sources)]
-		self.pqueues = [PathPriorityQueue.buildheap(self.path_collection_list[i], self.conflict_matrix, i) for i in range(self.num_sources)]
+		self.pqueues = [PathPriorityQueue.buildheap(self.path_collection_list[i]) for i in range(self.num_sources)]
 	
 	def _random_select_and_update(self, path_join_tree, verifier, target_list, current_layout, post_primary_layer_view):
 		rand_index = np.random.randint(0, high=len(self.reduceable))
 		i = self.reduceable[rand_index]
 		pq = self.pqueues[i]
 		path, s = pq.peek()
-		pq.change_score(path, s*10, self.conflict_matrix, i)
+		pq.change_score(path, s+1)
 		new_path = pq.peek()[0]
 
 		path_join_tree.modify_leaves([i], [new_path], verifier, target_list, current_layout, post_primary_layer_view) 
@@ -113,7 +111,7 @@ class PriorityPathCollection:
 				update_index = node.target_index_list[np.random.randint(0, high=len(node.target_index_list))]
 				pq = self.pqueues[update_index]
 				path, s = pq.peek()
-				pq.change_score(path, s * 10, self.conflict_matrix, update_index)
+				pq.change_score(path, s+1)
 				modified_heaps.append(update_index)
 				new_paths.append(pq.peek()[0])
 			else:

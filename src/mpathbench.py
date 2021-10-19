@@ -159,8 +159,9 @@ def b_qasmbench(coupling_map, dataset='medium', out_file='qasmbench.csv', max_sw
 	basis_pass = Unroller(G_QISKIT_GATE_SET)
 
 	layout_passes = [
-		SabreLayout(coupling_map),
-		TrivialLayout(coupling_map)
+#		SabreLayout(coupling_map, routing_pass=MultipathSwap(coupling_map, max_swaps=max_swaps, max_lookahead=max_lookahead)),
+		SabreLayout(coupling_map, routing_pass=SabreSwap(coupling_map, heuristic='decay')),
+#		TrivialLayout(coupling_map)
 	]
 
 	layout_pass_names = ['SABRE', 'Trivial']

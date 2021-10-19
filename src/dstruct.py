@@ -15,31 +15,28 @@ class SumTreeNode:
 		self.children = children
 
 class PathJoinTreeNode:
-	def __init__(self, swap_collection, conflict_matrix_line, parent, left_child, right_child, target_index_list):
+	def __init__(self, swap_collection, parent, left_child, right_child, target_index_list):
 		self.data = swap_collection		# path(left) JOIN path(right)
-		self.conflict_matrix_line = conflict_matrix_line
 		self.parent = parent
 		self.left_child = left_child
 		self.right_child = right_child
 		# Data signals.
 		self.dirty = 0  	# 1 = dirty
-		self.conflict = 0	# 1 = has conflict
 		self.valid = True
 		# Other data held by a node.
 		self.target_index_list = target_index_list
 		self.score = 0
 
 class PathJoinTree:
-	def __init__(self, leaves, conflict_matrix, verifier, target_list, current_layout, post_primary_layer_view):	
-		self.leaves = [PathJoinTreeNode(_path_to_swap_collection(path), conflict_matrix[i], None, None, None, [i]) for (i, path) in enumerate(leaves)]
-		zero_line = [0]*len(conflict_matrix[0])
+	def __init__(self, leaves, verifier, target_list, current_layout, post_primary_layer_view):	
+		self.leaves = [PathJoinTreeNode(_path_to_swap_collection(path), None, None, None, [i]) for (i, path) in enumerate(leaves)]
 		while not _is_pow2(len(self.leaves)):
-			self.leaves.append(PathJoinTreeNode([], zero_line, None, None, None, []))
+			self.leaves.append(PathJoinTreeNode([], None, None, None, []))
 		# Build segmented tree from leaves using BFS-like algorithm.
 		queue = [leaf for leaf in self.leaves]
 		while len(queue) > 1:  # If len(queue) == 1, we only have the root inside.
 			left, right = queue.pop(0), queue.pop(0)
-			parent = PathJoinTreeNode(None, None, None, left, right, None)
+			parent = PathJoinTreeNode(None, None, left, right, None)
 			self._update_node(parent, verifier, target_list, current_layout, post_primary_layer_view)
 			left.parent = parent
 			right.parent = parent
@@ -71,44 +68,50 @@ class PathJoinTree:
 	
 	def _update_node(self, node, verifier, target_list, current_layout, post_primary_layer_view):
 		left, right = node.left_child, node.right_child
-		j_collection = deepcopy(left.data)
-		j_conflict_matrix_line = [0]*len(left.conflict_matrix_line)
+		j_collection = []
 		j_target_index_list = copy(left.target_index_list)
-
-		conflict_bit = 0
 		
 		j_target_index_list.extend(right.target_index_list)
 
 		# Don't do any work if the join is not going to be valid anyways.
 		if not (left.valid and right.valid):
 			node.data = j_collection
-			node.conflict_matrix_line = j_conflict_matrix_line 
-			node.conflict = 1
 			node.valid = False
 			node.target_index_list = j_target_index_list
 			return 
 
-		for (j, coll_layer) in enumerate(right.data):
-			for (v0, v1) in coll_layer:
-				left_line_v0, left_line_v1 = left.conflict_matrix_line[v0], left.conflict_matrix_line[v1]
-				right_line_v0, right_line_v1 = right.conflict_matrix_line[v0], right.conflict_matrix_line[v1]
-				j_conflict_matrix_line[v0] = left_line_v0 | right_line_v0		
-				j_conflict_matrix_line[v1] = left_line_v1 | right_line_v1
+		# Join by inserting SWAPs from right.data whenever we can. 
+		# Do not preemtively continue to other layers if we are not done 
+		right_data_ptr = 0
+		left_data_ptr = 0
+		while right_data_ptr < len(right.data):
+			right_layer = right.data[right_data_ptr]
+			while right_layer:
+				if left_data_ptr >= len(left.data):
+					j_collection.append(copy(right_layer))
+					break
+				left_layer = left.data[left_data_ptr]
 
-				# Use conflict lines to check for conflict.
-				# If there is a conflict, let the verifier reject the candidate.
-				has_v0 = left_line_v0 & right_line_v0 & (1 << j)
-				has_v1 = left_line_v1 & right_line_v1 & (1 << j)
-				if has_v0 | has_v1 == 0:  # No conflict.
-					if j >= len(j_collection):
-						j_collection.append([(v0, v1)])
-					elif (v0, v1) not in j_collection[j]:
-						j_collection[j].append((v0, v1))
-				else:
-					conflict_bit = 1	
+				joined_layer = []
+				visited = set()
+				for (v0, v1) in left_layer:
+					joined_layer.append((v0, v1))
+					visited.add(v0)
+					visited.add(v1)
+				remaining_swaps = []	
+				for (v0, v1) in right_layer:
+					if v0 in visited or v1 in visited:
+						remaining_swaps.append((v0, v1))
+					else:
+						joined_layer.append((v0, v1))
+					visited.add(v0)
+					visited.add(v1)
+				j_collection.append(joined_layer)
+				left_data_ptr += 1
+				right_layer = remaining_swaps
+			right_data_ptr += 1
+
 		node.data = j_collection
-		node.conflict_matrix_line = j_conflict_matrix_line
-		node.conflict = conflict_bit
 		if node.parent is None:
 			node.valid, node.score = verifier._verify_and_measure(
 				j_collection, 
@@ -117,14 +120,12 @@ class PathJoinTree:
 				post_primary_layer_view, 
 				verify_only=False
 			) 
-		elif conflict_bit == 0:  # We know it is just AND of both valid bits.
-			node.valid = left.valid and right.valid
 		else:
 			node.valid, _ = verifier._verify_and_measure(
-				j_collection,
-				[target_list[i] for i in j_target_index_list],
-				current_layout,
-				post_primary_layer_view,
+				j_collection, 
+				[target_list[i] for i in j_target_index_list], 
+				current_layout, 
+				post_primary_layer_view, 
 				verify_only=True
 			) 
 		node.target_index_list = j_target_index_list
@@ -134,53 +135,52 @@ class PathPriorityQueue:
 		self.backing_array = [0]
 		self.size = 0
 	
-	def buildheap(array, conflict_matrix, heap_index):
+	def buildheap(array):
 		pq = PathPriorityQueue()
 		pq.backing_array.extend(array)
 		pq.size = len(array)
 
 		i = len(pq.backing_array) >> 1
 		while i >= 1:
-			pq._downheap(i, conflict_matrix, heap_index, update=False)
+			pq._downheap(i)
 			i -= 1
-		_update_conflict_matrix(pq.backing_array[1], conflict_matrix, heap_index)
 		return pq
 
-	def enqueue(self, path, score, conflict_matrix, heap_index):
+	def enqueue(self, path, score):
 		self.backing_array.append((path, score))
 		orig_path, orig_score = self.backing_array[1]
 		# Update size.
 		self.size += 1
 		# Make sure heap property is maintained.
-		self._upheap(self.size, conflict_matrix, heap_index)
+		self._upheap(self.size)
 	
-	def dequeue(self, conflict_matrix, heap_index):
+	def dequeue(self):
 		root = self.backing_array[1]
 		self.size -= 1
 		# Replace root with last entry.
 		if self.size > 0:
 			self.backing_array[1] = self.backing_array.pop()
 			# Make sure heap property is maintained.
-			self._downheap(1, conflict_matrix, heap_index)
+			self._downheap(1)
 		return root
 	
 	def peek(self):
 		return self.backing_array[1]
 	
-	def change_score(self, target_path, new_score, conflict_matrix, heap_index):	
+	def change_score(self, target_path, new_score):	
 		target_hash = _path_hash_f(target_path)
 		for i in range(1, self.size+1):
 			path, score = self.backing_array[i]
 			if _path_hash_f(path) == target_hash:  # close enough.
 				self.backing_array[i] = path, new_score  
 				if new_score < score:  # Perform upheap to maintain heap property
-					self._upheap(i, conflict_matrix, heap_index)
+					self._upheap(i)
 				elif new_score > score:  # Perform downheap
-					self._downheap(i, conflict_matrix, heap_index)
+					self._downheap(i)
 				return score
 		return -1
 	
-	def _upheap(self, from_index, conflict_matrix, heap_index, update=True):
+	def _upheap(self, from_index):
 		path, score = self.backing_array[from_index]
 		curr_index = from_index
 		while curr_index > 1:
@@ -191,11 +191,8 @@ class PathPriorityQueue:
 				self.backing_array[curr_index], self.backing_array[curr_index >> 1]
 			# Update index.
 			curr_index = curr_index >> 1
-		# Update conflict matrix
-		if update:
-			_update_conflict_matrix(self.backing_array[1], conflict_matrix, heap_index)
 
-	def _downheap(self, from_index, conflict_matrix, heap_index, update=True): 
+	def _downheap(self, from_index): 
 		path, score = self.backing_array[from_index]
 		curr_index = from_index
 		while curr_index < self.size + 1:
@@ -214,21 +211,6 @@ class PathPriorityQueue:
 				curr_index = (curr_index << 1) + child_index
 			else:
 				break
-		# Update conflict matrix
-		if update:
-			_update_conflict_matrix(self.backing_array[1], conflict_matrix, heap_index)
-
-def _update_conflict_matrix(entry, conflict_matrix, heap_index):
-	path, _ = entry
-
-	i = 0
-	# Clear conflict matrix entry.
-	for i in range(len(conflict_matrix[heap_index])):
-		conflict_matrix[heap_index][i] = 0
-	# Now update it.
-	for (i, (v0, v1)) in enumerate(path):
-		conflict_matrix[heap_index][v0] |= 1 << i
-		conflict_matrix[heap_index][v1] |= 1 << i
 
 def _soln_hash_f(soln):
 	h = 0
