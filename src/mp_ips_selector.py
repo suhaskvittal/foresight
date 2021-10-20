@@ -1,11 +1,11 @@
 """
 	author: Suhas Vittal
-	date:	4 October 2021 @ 11:08 a.m. EST
+	date:	20 October 2021
 """
 
 import numpy as np
 
-class PriorityPathCollection:
+class IPSSelector:
 	def __init__(self, path_collection_list, num_vertices, num_sources):
 		self.num_vertices = num_vertices
 		self.num_sources = num_sources

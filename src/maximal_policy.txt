@@ -1,0 +1,62 @@
+
+		elif policy == POLICY_SOLVE_MAXIMAL: 
+			# Execute all executable operations, even beyond front layer.
+			execution_list = []
+			next_op_layer = []
+
+			unsat_qubit_set = set()  # Easier to keep track of unsatisfied qubits.
+			any_satisfied = True
+			curr_layer_index = 0
+			while any_satisfied and curr_layer_index < len(primary_layer_view):
+				if curr_layer_index >= len(output_layers):
+					output_layers.append([])
+				any_satisfied = False
+				curr_p_layer = primary_layer_view[curr_layer_index]
+				curr_s_layer = secondary_layer_view[curr_layer_index]
+				next_ops = []
+				for op in curr_s_layer:
+					if op in completed_set:
+						continue
+					# Apply operations in secondary qubit layer that can be executed (prior primary layer ancestors must have been satisfied).
+					if not any(q in unsat_qubit_set for q in op.qargs):
+						output_layers[curr_layer_index].append(self._remap_gate_for_layout(op, current_layout, canonical_register))
+						any_satisfied=True
+						completed_set.add(op)
+					else:
+						for q in op.qargs:
+							unsat_qubit_set.add(q)
+				for op in curr_p_layer:
+					if op in completed_set:
+						continue
+					q0, q1 = op.qargs
+					if q1 in unsat_qubit_set or q0 not in unsat_qubit_set:
+						unsat_qubit_set.add(q0)
+						unsat_qubit_set.add(q1)
+						next_ops.append(op)
+						continue
+					# Only consider if qubits are satisfied.
+					if self.coupling_map.graph.has_edge(current_layout[q0], current_layout[q1]):
+						output_layers[curr_layer_index].append(self._remap_gate_for_layout(op, current_layout, canonical_register))
+						any_satisfied = True
+						completed_set.add(op)
+					else:
+						execution_list.append(op)
+						# Update unsatisfiability list
+						unsat_qubit_set.add(q0)
+						unsat_qubit_set.add(q1)
+				next_op_layer.append(next_ops)
+				curr_layer_index += 1
+			# Define post primary layers.
+			if len(primary_layer_view) == 1:
+				post_primary_layer_view = []
+			else:
+				post_primary_layer_view = next_op_layer  # Unvisited operations in layers 0 to curr_layer_index
+				post_primary_layer_view.extend(primary_layer_view[curr_layer_index:])
+			# Consume execution list
+			for op in execution_list:
+				q0, q1 = op.qargs
+				path_collection_list.append(self.path_find_and_fold(q0, q1, post_primary_layer_view, current_layout))
+				post_ops.append(op)
+				target_list.append((q0, q1))
+				target_to_op[(q0, q1)] = op
+			starting_output_layer = curr_layer_index

@@ -18,7 +18,7 @@ from copy import copy, deepcopy
 
 from mpathswap import MultipathSwap
 from layerview import LayerViewPass
-from qcirc import _bench_and_cmp, _build_pass_manager, _pad_circuit_to_fit
+from qcirc import _bench_and_cmp, _build_pass_manager, _pad_circuit_to_fit, draw
 
 import pandas as pd
 import numpy as np
@@ -39,19 +39,19 @@ G_QISKIT_GATE_SET = ['u1', 'u2', 'u3', 'cx']
 ibm_toronto = np.array([[0, 1], [1, 0], [1, 2], [1, 4], [2, 1], [2, 3], [3, 2], [3, 5], [4, 1], [4, 7], [5, 3], [5, 8], [6, 7], [7, 4], [7, 6], [7, 10], [8, 5], [8, 9], [8, 11], [9, 8], [10, 7], [10, 12], [11, 8], [11, 14], [12, 10], [12, 13], [12, 15], [13, 12], [13, 14], [14, 11], [14, 13], [14, 16], [15, 12], [15, 18], [16, 14], [16, 19], [17, 18], [18, 15], [18, 17], [18, 21], [19, 16], [19, 20], [19, 22], [20, 19], [21, 18], [21, 23], [22, 19], [22, 25], [23, 21], [23, 24], [24, 23], [24, 25], [25, 22], [25, 24], [25, 26], [26, 25]])
 
 qasmbench_medium = [
-	'adder_n10',		# single adder
-	'qft_n15',
+#	'adder_n10',		# single adder
+#	'qft_n15',
 	'dnn_n8',			# quantum deep neural net
-	'cc_n12',			# counterfeit coin
-	'multiplier_n15', 	# binary multiplier
-	'qf21_n15', 		# quantum phase estimation, factor 21			
-	'sat_n11',		
-	'seca_n11',			# shor's error correction
-	'bv_n14',			# bernstein-vazirani algorithm 
-	'ising_n10',		# ising gate sim
-	'qaoa_n6',			
-	'qpe_n9',			# quantum phase estimation
-	'simon_n6'			# simon's algorithm	
+#	'cc_n12',			# counterfeit coin
+#	'multiplier_n15', 	# binary multiplier
+#	'qf21_n15', 		# quantum phase estimation, factor 21			
+#	'sat_n11',		
+#	'seca_n11',			# shor's error correction
+#	'bv_n14',			# bernstein-vazirani algorithm 
+#	'ising_n10',		# ising gate sim
+#	'qaoa_n6',			
+#	'qpe_n9',			# quantum phase estimation
+#	'simon_n6'			# simon's algorithm	
 ]
 
 qasmbench_large = [
@@ -78,20 +78,20 @@ class BenchmarkPass(AnalysisPass):
 #			SabreLayout(coupling_map),
 #			ApplyLayout(),
 			SabreSwap(coupling_map, heuristic='decay'),
-			Unroller(G_QISKIT_GATE_SET)
+#			Unroller(G_QISKIT_GATE_SET)
 		])
 		self.mpath_pass = PassManager([
 #			mpath_mapping_pass,
 #			ApplyLayout(),
 			LayerViewPass(),
 			mpath_routing_pass,
-			Unroller(G_QISKIT_GATE_SET)
+#			Unroller(G_QISKIT_GATE_SET)
 		])
 		self.look_pass = PassManager([
 #			SabreLayout(coupling_map, routing_pass=LookaheadSwap(coupling_map)),
 #			ApplyLayout(),
 			LookaheadSwap(coupling_map, search_depth=4, search_width=4),
-			Unroller(G_QISKIT_GATE_SET)
+#			Unroller(G_QISKIT_GATE_SET)
 		])
 		self.runs = runs
 
@@ -138,6 +138,8 @@ class BenchmarkPass(AnalysisPass):
 				self.benchmark_results['MPATH CNOTs'] += (mpath_circ.size() - original_circuit_size) / self.runs
 				self.benchmark_results['MPATH Depth'] += (mpath_circ.depth()) / self.runs
 				self.benchmark_results['MPATH Time'] += (end - start) / self.runs
+			draw(sabre_circ)
+			draw(mpath_circ)
 			# LOOK
 #			try:
 #				start = timer()
@@ -159,8 +161,9 @@ def b_qasmbench(coupling_map, dataset='medium', out_file='qasmbench.csv', max_sw
 	basis_pass = Unroller(G_QISKIT_GATE_SET)
 
 	layout_passes = [
-		SabreLayout(coupling_map),
-		TrivialLayout(coupling_map)
+#		SabreLayout(coupling_map, routing_pass=MultipathSwap(coupling_map, max_swaps=max_swaps, max_lookahead=max_lookahead)),
+		SabreLayout(coupling_map, routing_pass=SabreSwap(coupling_map, heuristic='decay')),
+#		TrivialLayout(coupling_map)
 	]
 
 	layout_pass_names = ['SABRE', 'Trivial']
