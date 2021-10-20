@@ -23,6 +23,7 @@ class SwapTreeNode:
 		self.output_list = output_list
 		self.parent = None
 		self.last_modifying_ancestor = None
+		self.is_lma = False
 		self.children = []
 		self.valid = 1
 		self.marked_node_map = marked_node_map
@@ -127,48 +128,41 @@ class MultipathSwap(TransformationPass):
 		exec_deque = deque(dag.front_layer())
 		self._traverse_execution_deque(exec_deque, execution_root, dag, canonical_register)
 		execution_root.last_modifying_ancestor = execution_root
+		execution_root.is_lma = True
 
 		current_tree_layer = [execution_root]
 		lma_list = [execution_root]
 		min_dag = None
+		max_size = 64
 		while current_tree_layer:
-			if len(current_tree_layer) > 256:
+			if len(current_tree_layer) > max_size:
 				lma_list = self._contract_tree(lma_list, dag, canonical_register)	
+				if len(lma_list) > max_size:
+					lma_list = list(np.random.choice(lma_list, size=max_size, replace=False))
 				current_tree_layer = copy(lma_list)
 			next_tree_layer = []
 			invalidation_list = []
 			for tree_node in current_tree_layer:
 				if tree_node.front_layer:
-					children, invalidated_list = self.exec_on_subtree(tree_node, dag, canonical_register)
+					children, invalids = self.exec_on_subtree(tree_node, dag, canonical_register)
 					for (i, c) in enumerate(children):
 						next_tree_layer.append(c)
-						if invalidated_list[i] is not None:
+						if c.is_lma:
 							lma_list.append(c)
-							invalidation_list.append(invalidated_list[i])
+					invalidation_list.extend(invalids)
 				else:
 					# Apply output list and exit.
 					mapped_dag = dag._copy_circuit_metadata()
 					for node in tree_node.output_list:
 						mapped_dag.apply_operation_back(node.op, node.qargs, node.cargs)
-					mapped_dag
 					if min_dag is None or mapped_dag.size() < min_dag.size() or (mapped_dag.size() == min_dag.size() and mapped_dag.depth() < min_dag.depth()):
 						min_dag = mapped_dag
-			for node in invalidation_list:
-				node.valid = 0
 			current_tree_layer = next_tree_layer
 		return min_dag
 	
 	def exec_on_subtree(self, root, dag, canonical_register):
-		if root.last_modifying_ancestor.valid == 0:  # This branch is no longer valid.
-			return [], []
 		# Build post layers
-		post_layers = [[node for (_, node, _) in dag.edges(root.front_layer) if node.type == 'op' and len(node.qargs) == 2]]
-		for _ in range(100+1):
-			next_post_layer = [node for (_, node, _) in dag.edges(post_layers[-1]) if node.type == 'op' and len(node.qargs) == 2] 
-			if next_post_layer:
-				post_layers.append(next_post_layer)
-			else:
-				break
+		post_layers = self._get_post_layers(root, dag)
 
 		swap_candidates = []
 		seen = set()
@@ -176,23 +170,16 @@ class MultipathSwap(TransformationPass):
 		for node in root.front_layer:
 			v0, v1 = node.qargs  # These are all two qubit operations.
 			p0, p1 = current_layout[v0], current_layout[v1]
-			path_candidates = self._path_select(p0, p1, max_length=self.coupling_map.distance_matrix[p0,p1]+self.slack)
-			for path in path_candidates:
-				front_candidate, back_candidate = path[0], path[-1]
-				if front_candidate not in seen:
-					score = self._score(front_candidate, root.front_layer, post_layers, current_layout)
-					swap_candidates.append((front_candidate, score))
-					seen.add(front_candidate)
-				if back_candidate not in seen:
-					score = self._score(back_candidate, root.front_layer, post_layers, current_layout)
-					swap_candidates.append((back_candidate, score))
-					seen.add(back_candidate)
+			for p in [p0, p1]:
+				for q in self.coupling_map.neighbors(p):
+					score = self._score((p, q), root.front_layer, post_layers, current_layout)
+					swap_candidates.append(((p, q), score))
 		swap_queue = SwapPriorityQueue.buildheap(swap_candidates)
 		min_swap, min_score = swap_queue.dequeue()
 		min_swap_list = [min_swap]
 		while swap_queue.size > 0:
 			swap, score = swap_queue.dequeue()
-			if score > min_score * 1.5:
+			if score > min_score*1:
 				break
 			min_swap_list.append(swap)
 		# Create SwapTreeNodes for all swaps in min_swap_list
@@ -221,10 +208,9 @@ class MultipathSwap(TransformationPass):
 				# Unreference parent.
 				child_tree_node.parent = None
 				child_tree_node.last_modifying_ancestor = child_tree_node  
+				child_tree_node.is_lma = True
 				self._traverse_execution_deque(exec_deque, child_tree_node, dag, canonical_register)
 				invalidated.append(root.last_modifying_ancestor)
-			else:
-				invalidated.append(None)
 			child_array.append(child_tree_node)
 		return child_array, invalidated
 	
@@ -232,40 +218,44 @@ class MultipathSwap(TransformationPass):
 		# Contract for each last modifying ancestor.
 		# Last modifying ancestor is contiguous.
 		# Perform a DFS on each lma if they are valid.
-		min_leaves, min_size, min_score = None, -1, -1
+		new_lma_list = []
 		for lma in lma_list:
 			if lma.valid == 0:
 				continue
+			min_leaves, min_score = None, -1
 			dfs_stack = [(lma, [])]
 			while dfs_stack:
 				tree_node, swap_list = dfs_stack.pop()
 				swap_list_cpy = copy(swap_list)
+				if tree_node.swap:
+					p0, p1 = tree_node.swap
+					swap_op = DAGNode(op=SwapGate(), qargs=[tree_node.current_layout[p0], tree_node.current_layout[p1]], type='op')
+					swap_list_cpy.append(self._remap_gate_for_layout(swap_op, tree_node.current_layout, canonical_register))
 				if tree_node.children:
-					swap_list_cpy.append(tree_node.swap)
 					for c in tree_node.children:
+						if c.is_lma:
+							continue
 						dfs_stack.append((c, swap_list_cpy))
 				else:  # This is a leaf.
 					# Score the leaf.
-					post_layers = [[node for (_, node, _) in dag.edges(tree_node.front_layer) if node.type == 'op' and len(node.qargs) == 2]]
-					for _ in range(100+1):
-						next_post_layer = [node for (_, node, _) in dag.edges(post_layers[-1]) if node.type == 'op' and len(node.qargs) == 2] 
-						if next_post_layer:
-							post_layers.append(next_post_layer)
-						else:
-							break
-					score = self._distf(tree_node.front_layer, post_layers, tree_node.current_layout)
+					post_layers = self._get_post_layers(tree_node, dag)
+					score = self._distf(tree_node.front_layer, post_layers, tree_node.current_layout)\
+						+ np.sqrt(len(swap_list_cpy) + len(tree_node.output_list))*0.1
 					# update min leaves
 					if min_score < 0 or score <= min_score:
-						for (p0, p1) in swap_list_cpy:
-							swap_op = DAGNode(op=SwapGate(), qargs=[tree_node.current_layout[p0], tree_node.current_layout[p1]], type='op')
-							tree_node.output_list.append(self._remap_gate_for_layout(swap_op, tree_node.current_layout, canonical_register))
+						for node in swap_list_cpy:
+							tree_node.output_list.append(node)
 						tree_node.last_modifying_ancestor = tree_node
-						size = len(tree_node.output_list)
-						if min_score < 0 or score < min_score or (score==min_score and size < min_size):
+						tree_node.is_lma = True
+						tree_node.swap = None
+						if min_score < 0 or score < min_score:
 							min_leaves = [tree_node]
-							min_size = size
 							min_score = score
-		return min_leaves
+						#elif min_score == score:
+						#	min_leaves.append(tree_node)
+			if min_leaves:
+				new_lma_list.extend(min_leaves)
+		return new_lma_list
 
 	def _collapse_swap_tree(self, tree_node, canonical_register):
 		# Get swaps until we reach last modifying ancestor (if lma, then valid bit of node is 0).
@@ -277,6 +267,7 @@ class MultipathSwap(TransformationPass):
 			curr = curr.parent
 		tree_node.last_modifying_ancestor.valid = 1
 		# Push swaps onto output list
+		tree_node.swap = None
 		while swap_list:
 			p0, p1 = swap_list.pop()
 			swap_op = DAGNode(op=SwapGate(), qargs=[tree_node.current_layout[p0], tree_node.current_layout[p1]], type='op')
@@ -304,6 +295,32 @@ class MultipathSwap(TransformationPass):
 				if tree_node.marked_node_map[child] == len(child.qargs):
 					# Then all dependencies are satisified, add to exec deque.	
 					exec_deque.append(child)
+	
+	def _get_post_layers(self, tree_node, dag, depth=5):
+		post_layers = [[]]
+
+		mnm = tree_node.marked_node_map.copy()
+		d = 0
+		curr_layer = tree_node.front_layer
+		while d < depth and curr_layer:
+			post = []
+			next_layer = []
+			for node in curr_layer:
+				for (_, child, edge_data) in dag.edges(node):
+					if child.type != 'op' or not isinstance(edge_data, Qubit):
+						continue
+					if child not in mnm:
+						mnm[child] = 0
+					mnm[child] += 1
+					if mnm[child] == len(child.qargs):
+						next_layer.append(child)
+						if len(child.qargs) == 2:
+							post.append(child)
+			curr_layer = next_layer
+			if post:
+				post_layers.append(post)
+			d += 1
+		return post_layers	
 				
 	def _path_select(self, source, sink, max_length=None):
 		if max_length is None:
@@ -348,25 +365,25 @@ class MultipathSwap(TransformationPass):
 		return self._distf(front_layer, post_layers, test_layout)
 
 	def _distf(self, front_layer, post_layers, current_layout):
+		if len(front_layer) == 0:
+			return 0
 		dist = 0.0
-		visited = set()
-		num_ops = 0
 		for node in front_layer:
 			q0, q1 = node.qargs
 			dist += self.coupling_map.distance_matrix[current_layout[q0], current_layout[q1]]
-			visited.add(q0)
-			visited.add(q1)
-			num_ops += 1
+		dist = dist / len(front_layer)
+		num_ops = 0
+		post_dist = 0.0
 		for (r, layer) in enumerate(post_layers):
+			if not layer:
+				continue
 			sub_sum = 0.0
 			for node in layer:
 				q0, q1 = node.qargs
-				if q0 in visited and q1 in visited:
-					continue
 				num_ops += 1
 				sub_sum += self.coupling_map.distance_matrix[current_layout[q0], current_layout[q1]]
-				visited.add(q0)
-				visited.add(q1)
-			dist += sub_sum/(r+2)
-		return dist/(num_ops+1)
+			post_dist += sub_sum
+		if num_ops > 0:
+			dist += post_dist*0.5/num_ops
+		return dist
 

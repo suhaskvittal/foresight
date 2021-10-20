@@ -12,6 +12,7 @@ from qiskit import Aer
 
 from mpathswap import MultipathSwap
 from layerview import LayerViewPass
+from testswap import TestSwap
 
 from timeit import default_timer as timer
 
@@ -115,8 +116,8 @@ if __name__ == '__main__':
 #	circ = QuantumCircuit.from_qasm_file('benchmarks/BV-10.qasm')
 #	circ = QuantumCircuit.from_qasm_file('benchmarks/cnot_test_n5.qasm')
 
-	coupling_map = CouplingMap.from_grid(n, m)
-#	coupling_map = CouplingMap(ibm_toronto)
+#	coupling_map = CouplingMap.from_grid(n, m)
+	coupling_map = CouplingMap(ibm_toronto)
 	#coupling_map = CouplingMap.from_line(n)
 	#coupling_map = CouplingMap.from_ring(n)
 
@@ -124,6 +125,7 @@ if __name__ == '__main__':
 
 	sabre_routing_pass = SabreSwap(coupling_map, heuristic='lookahead')
 	mpath_routing_pass = MultipathSwap(coupling_map, max_swaps=s, max_lookahead=8, solution_cap=8)
+	#mpath_routing_pass = TestSwap(coupling_map, heuristic='lookahead')
 
 	pm0 = _build_pass_manager(None, coupling_map) 
 	pm1 = _build_pass_manager(sabre_routing_pass, coupling_map, mapping='trivial')
