@@ -11,6 +11,8 @@ from qiskit.dagcircuit import DAGNode
 from qiskit.circuit.library import CXGate, SwapGate, Measure
 
 from layerview import LayerViewPass
+from mp_ips_selector import IPSSelector
+from mp_sum_tree import SumTreeNode
 
 import numpy as np
 
@@ -19,16 +21,14 @@ from collections import deque
 
 # MPATH_IPS ; IPS = Intelligent path selection
 class MPATH_IPS(TransformationPass):
-	def __init__(self, coupling_map, seed=None, max_swaps=5, max_path_limit=128, max_lookahead=16, solution_cap=32, edge_weights=None):
+	def __init__(self, coupling_map, slack=2, max_path_limit=128, max_lookahead=16, solution_cap=32, edge_weights=None):
 		super().__init__()
 
+		self.slack = slack
 		self.coupling_map = coupling_map		
-		self.slack = 2
-		self.max_swaps = max_swaps
 		self.max_path_limit = max_path_limit
 		self.max_lookahead = max_lookahead
 		self.solution_cap = solution_cap
-		self.seed = seed
 
 		self.path_memoizer = {}
 			
@@ -51,9 +51,8 @@ class MPATH_IPS(TransformationPass):
 		solutions = self.deep_solve(
 			primary_layer_view, 
 			secondary_layer_view, 
-			[(current_layout, mapped_dag, 0, set())], 
-			canonical_register, 
-			shallow_solve_policy=POLICY_SOLVE_MAXIMAL,
+			[(current_layout, [], 0)], 
+			canonical_register 
 		)
 
 		# Choose solution with minimum depth.
@@ -61,7 +60,7 @@ class MPATH_IPS(TransformationPass):
 		min_layout = None
 		min_size = -1
 		min_depth = -1
-		for (layout, soln, size, _) in solutions:
+		for (layout, soln, size) in solutions:
 			depth = len(soln)
 			if min_solution is None or (size < min_size) or (size == min_size and depth < min_depth):
 				min_layout = layout
@@ -83,8 +82,7 @@ class MPATH_IPS(TransformationPass):
 		primary_layer_view, 
 		secondary_layer_view, 
 		base_solver_queue, 
-		canonical_register, 
-		shallow_solve_policy=POLICY_SOLVE_BY_LAYER,
+		canonical_register 
 	):
 		if len(primary_layer_view) == 0:
 			return base_solver_queue
@@ -92,36 +90,32 @@ class MPATH_IPS(TransformationPass):
 		# Build tree of output layers.
 		solver_queue = []
 		leaves = []
-		for (i, (base_layout, base_output_layers, base_sum, completed_set)) in enumerate(base_solver_queue):
+		for (i, (base_layout, base_output_layers, base_sum)) in enumerate(base_solver_queue):
 			root_node = SumTreeNode(base_output_layers, base_sum, None, [])  
 			leaves.append(root_node)
-			solver_queue.append((base_layout, i, completed_set))
+			solver_queue.append((base_layout, i))
 		look = 0
 		while len(solver_queue) <= 2*self.solution_cap:
 			if len(primary_layer_view) == 0:
 				break
 			next_solver_queue = []
 			next_leaves = []
-			for (current_layout, parent_id, completed_set) in solver_queue:  # Empty out queue into next_solver_queue.
+			for (current_layout, parent_id) in solver_queue:  # Empty out queue into next_solver_queue.
 				parent = leaves[parent_id]
 				# Find parent corresponding to parent id.
-				if completed_set is not None:
-					completed_set = copy(completed_set)
 				solutions = self.shallow_solve(
 					primary_layer_view,
 					secondary_layer_view,
 					current_layout,
-					canonical_register,
-					policy=shallow_solve_policy,
-					completed_set=completed_set
+					canonical_register
 				)
 				# Apply solutions non-deterministically to current_dag.
-				for (i, (output_layers, new_layout)) in enumerate(solutions):
+				for (i, (output_layers, new_layout, num_swaps)) in enumerate(solutions):
 					# Create node for each candidate solution.
-					node = SumTreeNode(output_layers, parent.sum_data + sum(len(layer) for layer in output_layers), parent, []) 
+					node = SumTreeNode(output_layers, parent.sum_data + num_swaps, parent, []) 
 					parent.children.append(node)
 					next_leaves.append(node)
-					next_solver_queue.append((new_layout, len(next_leaves) - 1, completed_set))
+					next_solver_queue.append((new_layout, len(next_leaves) - 1))
 			solver_queue = next_solver_queue
 			leaves = next_leaves
 			primary_layer_view.popleft()
@@ -131,34 +125,32 @@ class MPATH_IPS(TransformationPass):
 		min_leaves = []
 		min_sum = -1
 		for (i, leaf) in enumerate(leaves):
-			layout, _, completed_set = solver_queue[i]
+			layout, _ = solver_queue[i]
 			if min_sum < 0 or leaf.sum_data < min_sum:
-				min_leaves = [(leaf, layout, leaf.sum_data, completed_set)]
+				min_leaves = [(leaf, layout, leaf.sum_data)]
 				min_sum = leaf.sum_data
 			elif leaf.sum_data == min_sum:
-				min_leaves.append((leaf, layout, leaf.sum_data, completed_set))
+				min_leaves.append((leaf, layout, leaf.sum_data))
 		# Now that we know the best leaves, we simply just need to build the corresponding dags.
 		# Traverse up the leaves -- there is only one path to a root.
 		min_leaves = min_leaves[:self.solution_cap]
 		min_solutions = []
-		for (leaf, layout, leaf_sum, completed_set) in min_leaves:
+		for (leaf, layout, leaf_sum) in min_leaves:
 			output_layer_deque = deque([])
 			curr = leaf
-			while curr.parent != None:
+			while curr != None:
 				output_layer_deque.extendleft(curr.obj_data)
 				curr = curr.parent
-			min_solutions.append((layout, output_layer_deque, leaf_sum, completed_set))
+			min_solutions.append((layout, output_layer_deque, leaf_sum))
 
-		return self.deep_solve(primary_layer_view, secondary_layer_view, min_solutions, canonical_register, shallow_solve_policy=shallow_solve_policy)
-
+		return self.deep_solve(primary_layer_view, secondary_layer_view, min_solutions, canonical_register)
 				
-	def _path_select(self, source, sink, max_length=None):
-		if max_length is None:
-			max_length = self.max_swaps
-		output_layers = [[] for _ in range(2*self.max_swaps+2)]
+	def shallow_solve(self, primary_layer_view, secondary_layer_view, current_layout, canonical_register):
+		output_layers = [[]]
 		starting_output_layer = 1
 		
 		target_list = []
+		path_collection_list = []
 		post_ops = []
 		target_to_op = {}
 		# Only execute operations in current layer.
@@ -183,13 +175,13 @@ class MPATH_IPS(TransformationPass):
 				target_to_op[(q0, q1)] = op
 		# Build PPC and get candidate list.
 		if len(path_collection_list) == 0:
-			return [(output_layers, current_layout)] 
+			return [(output_layers, current_layout, 0)] 
 		#print([(q0.index, q1.index) for (q0, q1) in target_list])
-		ppc = PriorityPathCollection(path_collection_list, len(self.coupling_map.physical_qubits), len(path_collection_list))
-		candidate_list, suggestions = ppc.find_and_join(self, target_list, current_layout, post_primary_layer_view)
+		path_selector = IPSSelector(path_collection_list, len(self.coupling_map.physical_qubits), len(path_collection_list))
+		candidate_list, suggestions = path_selector.find_and_join(self, target_list, current_layout, post_primary_layer_view)
 		if candidate_list is None:  # We failed, take the suggestions.
-			tmp_pl_view = copy(primary_layer_view)
-			tmp_sl_view = copy(secondary_layer_view)
+			tmp_pl_view = deepcopy(primary_layer_view)
+			tmp_sl_view = deepcopy(secondary_layer_view)
 			# Remove top layer from both views.
 			tmp_pl_view.popleft()
 			tmp_sl_view.popleft()
@@ -202,23 +194,21 @@ class MPATH_IPS(TransformationPass):
 				target_lists.append(target_sub_list)
 				tmp_pl_view.appendleft([target_to_op[target] for target in target_sub_list])
 				tmp_sl_view.appendleft([])
-			solutions = [(output_layers, current_layout)]
+			solutions = [(output_layers, current_layout, 0)]
 			while target_lists:
 				target_sub_list = target_lists.pop()
 				next_solutions = []
-				for (prev_layers, prev_layout) in solutions:
+				for (prev_layers, prev_layout, prev_swaps) in solutions:
 					solution_list = self.shallow_solve(
 						tmp_pl_view,
 						tmp_sl_view,
 						prev_layout,
-						canonical_register,
-						policy=policy,
-						completed_set=completed_set
+						canonical_register
 					)
-					for (layers, layout) in solution_list:
+					for (layers, layout, num_swaps) in solution_list:
 						prev_layers_cpy = copy(prev_layers)
 						prev_layers_cpy.extend(layers)
-						next_solutions.append((prev_layers_cpy, layout))
+						next_solutions.append((prev_layers_cpy, layout, prev_swaps+num_swaps))
 				tmp_pl_view.popleft()
 				tmp_sl_view.popleft()
 				solutions = next_solutions
@@ -230,7 +220,9 @@ class MPATH_IPS(TransformationPass):
 		for soln in candidate_list:
 			output_layers_cpy = deepcopy(output_layers)
 			new_layout = current_layout.copy()
+			num_swaps = 0
 			for (i, layer) in enumerate(soln):  # Perform the requisite swaps.
+				output_layers_cpy.append([])
 				for (p0, p1) in layer:
 					if p0 == p1:
 						continue
@@ -240,19 +232,15 @@ class MPATH_IPS(TransformationPass):
 						op=SwapGate(),
 						qargs=[v0, v1]	
 					)
-					if i+starting_output_layer >= len(output_layers_cpy):
-						output_layers_cpy.append([])
-					output_layers_cpy[i+starting_output_layer].append(self._remap_gate_for_layout(swp_gate, new_layout, canonical_register))
+					output_layers_cpy[-1].append(self._remap_gate_for_layout(swp_gate, new_layout, canonical_register))
 					# Apply swap to modify running layout.
 					new_layout[p0], new_layout[p1] = new_layout[p1], new_layout[p0]
+					num_swaps += 1
 			# Apply the operations after completing all the swaps.
+			output_layers_cpy.append([])
 			for op in post_ops:  
-				if i+starting_output_layer+1 >= len(output_layers_cpy):
-					output_layers_cpy.append([])
-				output_layers_cpy[i+starting_output_layer+1].append(self._remap_gate_for_layout(op, new_layout, canonical_register))
-				if completed_set:
-					completed_set.add(op)
-			solutions.append((output_layers_cpy, new_layout))  # Save layers to apply to DAG and corresponding layout.
+				output_layers_cpy[-1].append(self._remap_gate_for_layout(op, new_layout, canonical_register))
+			solutions.append((output_layers_cpy, new_layout, num_swaps))  # Save layers to apply to DAG and corresponding layout.
 		return solutions
 
 	def path_find_and_fold(self, v0, v1, post_primary_layer_view, current_layout):
@@ -267,6 +255,7 @@ class MPATH_IPS(TransformationPass):
 		memoizer_entry = (source, sink) if source < sink else (sink, source)
 		if memoizer_entry in self.path_memoizer:
 			return self.path_memoizer[memoizer_entry]
+		max_length = self.coupling_map.distance_matrix[source, sink] + self.slack
 	
 		path_candidates = []
 
@@ -363,11 +352,10 @@ class MPATH_IPS(TransformationPass):
 		for r in range(0, min(len(post_primary_layer_view), 100+1)):
 			post_layer = post_primary_layer_view[r]
 			sub_sum = 0.0
-			for node in layer:
+			for node in post_layer:
 				q0, q1 = node.qargs
 				num_ops += 1
-				v0, v1 = op.qargs
-				sub_sum += self.coupling_map.distance_matrix[test_layout[v0], test_layout[v1]] / (r+1)
+				sub_sum += self.coupling_map.distance_matrix[test_layout[q0], test_layout[q1]] / (r+1)
 			dist += sub_sum 
 		return dist/(1+num_ops)
 

@@ -3,6 +3,10 @@
 	date:	20 October 2021
 """
 
+from mp_path_priority_queue import PathPriorityQueue
+from mp_path_join_tree import PathJoinTree
+from mp_util import _path_to_swap_collection, _soln_hash_f
+
 import numpy as np
 
 class IPSSelector:

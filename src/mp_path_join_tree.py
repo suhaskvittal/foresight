@@ -3,7 +3,7 @@
 	date:	20 October 2021
 """
 
-from mp_util import _path_to_swap_collection
+from mp_util import _path_to_swap_collection, _is_pow2
 
 from copy import copy
 

@@ -18,6 +18,7 @@ import numpy as np
 from copy import copy, deepcopy
 from collections import deque
 
+# MPATH_BSP - BSP: Best Swap has Priority.
 class MPATH_BSP(TransformationPass):
 	def __init__(self, coupling_map, tree_width_limit=64, edge_weights=None):
 		super().__init__()
@@ -55,7 +56,6 @@ class MPATH_BSP(TransformationPass):
 					lma_list = list(np.random.choice(lma_list, size=self.tree_width_limit, replace=False))
 				current_tree_layer = copy(lma_list)
 			next_tree_layer = []
-			invalidation_list = []
 			for tree_node in current_tree_layer:
 				if tree_node.front_layer:
 					children, invalids = self.exec_on_subtree(tree_node, dag, canonical_register)
@@ -63,7 +63,6 @@ class MPATH_BSP(TransformationPass):
 						next_tree_layer.append(c)
 						if c.is_lma:
 							lma_list.append(c)
-					invalidation_list.extend(invalids)
 				else:
 					# Apply output list and exit.
 					mapped_dag = dag._copy_circuit_metadata()
@@ -136,6 +135,7 @@ class MPATH_BSP(TransformationPass):
 		for lma in lma_list:
 			if lma.valid == 0:
 				continue
+			output_size_ref = None
 			min_leaves, min_score = None, -1
 			dfs_stack = [(lma, [])]
 			while dfs_stack:
@@ -153,8 +153,10 @@ class MPATH_BSP(TransformationPass):
 				else:  # This is a leaf.
 					# Score the leaf.
 					post_layers = self._get_post_layers(tree_node, dag)
+					if output_size_ref is None:
+						output_size_ref = len(swap_list_cpy) + len(tree_node.output_list)
 					score = self._distf(tree_node.front_layer, post_layers, tree_node.current_layout)\
-						+ np.sqrt(len(swap_list_cpy) + len(tree_node.output_list))*0.1
+						+ (len(swap_list_cpy) + len(tree_node.output_list))/output_size_ref * 0.5
 					# update min leaves
 					if min_score < 0 or score <= min_score:
 						for node in swap_list_cpy:
@@ -210,7 +212,7 @@ class MPATH_BSP(TransformationPass):
 					# Then all dependencies are satisified, add to exec deque.	
 					exec_deque.append(child)
 	
-	def _get_post_layers(self, tree_node, dag, depth=5):
+	def _get_post_layers(self, tree_node, dag, depth=10):
 		post_layers = [[]]
 
 		mnm = tree_node.marked_node_map.copy()
@@ -235,6 +237,11 @@ class MPATH_BSP(TransformationPass):
 				post_layers.append(post)
 			d += 1
 		return post_layers	
+
+	def _remap_gate_for_layout(self, op, layout, canonical_register):
+		new_op = copy(op)
+		new_op.qargs = [canonical_register[layout[x]] for x in op.qargs]
+		return new_op
 	
 	def _score(self, proposed_swap, front_layer, post_layers, current_layout):
 		p0, p1 = proposed_swap
@@ -255,7 +262,11 @@ class MPATH_BSP(TransformationPass):
 		for (r, layer) in enumerate(post_layers):
 			if not layer:
 				continue
-			sub_sum += self.coupling_map.distance_matrix[current_layout[q0], current_layout[q1]]
+			sub_sum = 0.0
+			for node in layer:
+				q0, q1 = node.qargs
+				num_ops += 1
+				sub_sum += self.coupling_map.distance_matrix[current_layout[q0], current_layout[q1]]
 			post_dist += sub_sum
 		if num_ops > 0:
 			dist += post_dist*0.5/num_ops
