@@ -41,6 +41,7 @@ def _read_arch_file(arch_file):
 # COUPLING MAPS
 G_IBM_TORONTO = _read_arch_file('arch/ibm_toronto.arch')
 G_GOOGLE_WEBER = _read_arch_file('arch/google_weber.arch')
+G_RIGETTI_ASPEN9 = _read_arch_file('arch/rigetti_aspen9.arch')
 
 # GATE SETS
 G_QISKIT_GATE_SET = ['u1', 'u2', 'u3', 'cx']
@@ -80,11 +81,9 @@ G_ZULEHNER = [f for f in listdir('benchmarks/zulehner') if isfile(join('benchmar
 G_QAOA = _sk_benchmarks()
 
 # ALGORITHM PARAMETERS
-G_MPATH_IPS_LOOKAHEAD = 16
 G_MPATH_IPS_SOLN_CAP = 16
-G_MPATH_IPS_PATH_LIMIT = 256
 G_MPATH_IPS_SLACK = 2
-G_MPATH_BSP_TREE_WIDTH = 64
+G_MPATH_BSP_TREE_WIDTH = 256
 
 
 def _soln_hash_f(soln):

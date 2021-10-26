@@ -10,8 +10,7 @@ from qiskit.transpiler.basepasses import AnalysisPass
 from qiskit.transpiler.passes import *
 from qiskit.compiler import transpile
 from qiskit.visualization import plot_histogram
-from qiskit.converters import circuit_to_dag, dag_to_circuit
-from qiskit import Aer
+from qiskit.exceptions import QiskitError
 
 from timeit import default_timer as timer
 from copy import copy, deepcopy
@@ -23,15 +22,16 @@ from mp_exec import _bench_and_cmp, _pad_circuit_to_fit, draw
 from mp_util import G_QISKIT_GATE_SET,\
 					G_IBM_TORONTO,\
 					G_GOOGLE_WEBER,\
-					G_MPATH_IPS_LOOKAHEAD,\
-					G_MPATH_IPS_SLACK,\
-					G_MPATH_IPS_PATH_LIMIT,\
-					G_MPATH_IPS_SOLN_CAP,\
-					G_MPATH_BSP_TREE_WIDTH,\
+					G_RIGETTI_ASPEN9,\
 					G_QASMBENCH_MEDIUM,\
 					G_QASMBENCH_LARGE,\
+					G_MPATH_IPS_SLACK,\
+					G_MPATH_IPS_SOLN_CAP,\
 					G_ZULEHNER,\
 					G_QAOA
+from mp_benchmark_pass import BenchmarkPass
+
+from jkq import qmap
 
 import pandas as pd
 import pickle as pkl
@@ -41,107 +41,27 @@ from sys import argv
 from collections import defaultdict
 from os import listdir
 from os.path import isfile, join
-
-class BenchmarkPass(AnalysisPass):
-	def __init__(self, coupling_map, compare=['sabre', 'ips', 'bsp'], runs=5):
-		super().__init__()
-
-		self.benchmark_list = compare
-
-		self.sabre_pass = PassManager([
-			SabreSwap(coupling_map, heuristic='decay'),
-			Unroller(G_QISKIT_GATE_SET)
-		])
-		self.ips_pass = PassManager([
-			MPATH_IPS(
-				coupling_map,
-				slack=G_MPATH_IPS_SLACK,
-				max_lookahead=G_MPATH_IPS_LOOKAHEAD,
-				max_path_limit=G_MPATH_IPS_PATH_LIMIT,	
-				solution_cap=G_MPATH_IPS_SOLN_CAP
-			),
-			Unroller(G_QISKIT_GATE_SET)
-		])
-		self.bsp_pass = PassManager([
-			MPATH_BSP(
-				coupling_map,
-				tree_width_limit=G_MPATH_BSP_TREE_WIDTH
-			),
-			Unroller(G_QISKIT_GATE_SET)
-		])
-		self.look_pass = PassManager([
-			LookaheadSwap(coupling_map, search_depth=4, search_width=4),
-			Unroller(G_QISKIT_GATE_SET)
-		])
-		self.runs = runs
-
-		self.benchmark_results = None
 	
-	def run(self, dag):
-		original_circuit = dag_to_circuit(dag)
-		original_circuit_size = original_circuit.size()
-
-		self.benchmark_results = defaultdict(float)
-
-		for r in range(self.runs):
-			# Run dag on both passes. 
-			# SABRE
-			if 'sabre' in self.benchmark_list:
-				start = timer()
-				sabre_circ = self.sabre_pass.run(original_circuit)
-				end = timer()
-				sabre_cnots = (sabre_circ.size() - original_circuit_size)
-				if r == 0 or self.benchmark_results['SABRE CNOTs'] > sabre_cnots:
-					self.benchmark_results['SABRE CNOTs'] = sabre_cnots
-					self.benchmark_results['SABRE Depth'] = (sabre_circ.depth())
-					self.benchmark_results['SABRE Time'] = (end - start)
-			# MPATH IPS
-			if 'ips' in self.benchmark_list:
-				start = timer()
-				ips_circ = self.ips_pass.run(original_circuit)
-				end = timer()
-				ips_cnots = (ips_circ.size() - original_circuit_size)
-				if r == 0 or self.benchmark_results['MPATH_IPS CNOTs'] > ips_cnots:
-					self.benchmark_results['MPATH_IPS CNOTs'] = ips_cnots
-					self.benchmark_results['MPATH_IPS Depth'] = (ips_circ.depth())
-					self.benchmark_results['MPATH_IPS Time'] = (end - start)
-			# MPATH BSP
-			if 'bsp' in self.benchmark_list:
-				start = timer()
-				bsp_circ = self.bsp_pass.run(original_circuit)
-				end = timer()
-				bsp_cnots = (bsp_circ.size() - original_circuit_size)
-				if r == 0 or self.benchmark_results['MPATH_BSP CNOTs'] > bsp_cnots:
-					self.benchmark_results['MPATH_BSP CNOTs'] = bsp_cnots
-					self.benchmark_results['MPATH_BSP Depth'] = (bsp_circ.depth())
-					self.benchmark_results['MPATH_BSP Time'] = (end - start)
-			# LOOK
-			if 'look' in self.benchmark_list:
-				try:
-					start = timer()
-					look_circ = self.look_pass.run(original_circuit)
-					end = timer()
-					if self.benchmark_results['LOOK CNOTs'] >= 0:
-						self.benchmark_results['LOOK CNOTs'] += (look_circ.size() - original_circuit_size) / self.runs
-						self.benchmark_results['LOOK Depth'] += (look_circ.depth()) / self.runs
-						self.benchmark_results['LOOK Time'] += (end - start) / self.runs
-				except TranspilerError:
-					self.benchmark_results['LOOK CNOTs'] = -1.0
-					self.benchmark_results['LOOK Depth'] = -1.0
-					self.benchmark_results['LOOK Time'] = -1.0
-	
-def b_qasmbench(coupling_map, dataset='medium', out_file='qasmbench.csv', runs=5):
+def b_qasmbench(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv', runs=5):
 	basis_pass = Unroller(G_QISKIT_GATE_SET)
 
 	mapping_pass = SabreLayout(coupling_map, routing_pass=SabreSwap(coupling_map, heuristic='decay'))
 	data = {}
-	benchmark_pass = BenchmarkPass(coupling_map, runs=runs)
+	benchmark_pass = BenchmarkPass(coupling_map, runs=runs, compare=['sabre', 'ips', 'bsp'])
 	benchmark_pm = PassManager([
 		basis_pass, 
 		mapping_pass, 
 		ApplyLayout(), 
 		benchmark_pass
 	]) 
+	qmap_pass = PassManager([
+		Unroller(['u1', 'u2', 'u3', 'p', 'cx'])
+	])
+	filter_pass = PassManager([
+		basis_pass,
+		TrivialLayout(coupling_map),
+		ApplyLayout()
+	])
 
 	if dataset == 'zulehner':
 		benchmark_suite = G_ZULEHNER
@@ -161,7 +81,7 @@ def b_qasmbench(coupling_map, dataset='medium', out_file='qasmbench.csv', runs=5
 			bench_name = '%s (%s)' % (family, grid_type)
 		else:
 			circ = QuantumCircuit.from_qasm_file('benchmarks/qasmbench/%s/%s/%s.qasm' % (dataset, qb_file, qb_file))	
-		if circ.depth() > 2000:
+		if circ.depth() > 2000 or circ.depth() < 30:
 			continue
 		if dataset == 'qaoa':
 			used_benchmarks.append(bench_name)
@@ -170,18 +90,43 @@ def b_qasmbench(coupling_map, dataset='medium', out_file='qasmbench.csv', runs=5
 			used_benchmarks.append(qb_file)
 			print('[%s]' % qb_file)
 		_pad_circuit_to_fit(circ, coupling_map)
+		circ = filter_pass.run(circ)
+		circ.remove_final_measurements()
 
-		benchmark_pm.run(circ)
-		benchmark_results = benchmark_pass.benchmark_results 	
-		if benchmark_results['SABRE CNOTs'] == -1:
-			print('\tN/A')
-		else:
+		try:
+			benchmark_pm.run(circ)
+			benchmark_results = benchmark_pass.benchmark_results 	
+
+			# Collect results from A* search
+			if dataset == 'zulehner' or dataset == 'qaoa':
+				qmap_start = timer()
+				qmap_res = qmap.compile(
+					circ,
+					arch=arch_file,
+					method=qmap.Method.heuristic
+				)
+				qmap_end = timer()
+				# Benchmark A* search
+				qmap_circ = QuantumCircuit.from_qasm_str(qmap_res['mapped_circuit']['qasm'])
+				qmap_circ.global_phase = circ.global_phase
+				qmap_circ = qmap_pass.run(qmap_circ)  # Compile gates to basis gates.
+				benchmark_results['A* CNOTs'] = 3*qmap_res['mapped_circuit']['swaps']
+				benchmark_results['A* Depth'] = qmap_circ.depth()
+				benchmark_results['A* Time'] = qmap_end - qmap_start
+			
+			if benchmark_results['SABRE CNOTs'] == -1:
+				print('\tN/A')
+			else:
+				for x in benchmark_results:
+					print('\t%s: %.3f' % (x, benchmark_results[x]))
 			for x in benchmark_results:
-				print('\t%s: %.3f' % (x, benchmark_results[x]))
-		for x in benchmark_results:
-			if x not in data:
-				data[x] = []
-			data[x].append(benchmark_results[x])
+				if x not in data:
+					data[x] = []
+				data[x].append(benchmark_results[x])
+		except QiskitError as error:
+			print(error)
+			used_benchmarks.pop()
+			continue
 	df = pd.DataFrame(data=data, index=used_benchmarks)
 	df.to_csv(out_file)
 	
@@ -197,6 +142,11 @@ if __name__ == '__main__':
 
 	if coupling_style == 'toronto':
 		coupling_map = G_IBM_TORONTO 
+		arch_file = 'arch/ibm_toronto.arch'  # For use with QMAP (Zulehner et al.)
 	elif coupling_style == 'weber':
 		coupling_map = G_GOOGLE_WEBER
-	b_qasmbench(coupling_map, dataset=mode, runs=runs, out_file=file_out)
+		arch_file = 'arch/google_weber.arch'
+	elif coupling_style == 'aspen9':
+		coupling_map = G_RIGETTI_ASPEN9
+		arch_file = 'arch/rigetti_aspen9.arch'
+	b_qasmbench(coupling_map, arch_file, dataset=mode, runs=runs, out_file=file_out)

@@ -13,6 +13,7 @@ from qiskit.circuit.library import CXGate, SwapGate, Measure
 from layerview import LayerViewPass
 from mp_ips_selector import IPSSelector
 from mp_sum_tree import SumTreeNode
+from mp_dist import process_coupling_map
 
 import numpy as np
 
@@ -21,18 +22,18 @@ from collections import deque
 
 # MPATH_IPS ; IPS = Intelligent path selection
 class MPATH_IPS(TransformationPass):
-	def __init__(self, coupling_map, slack=2, max_path_limit=128, max_lookahead=16, solution_cap=32, edge_weights=None):
+	def __init__(self, coupling_map, slack=2, solution_cap=32, edge_weights=None):
 		super().__init__()
 
 		self.slack = slack
 		self.coupling_map = coupling_map		
-		self.max_path_limit = max_path_limit
-		self.max_lookahead = max_lookahead
 		self.solution_cap = solution_cap
 
-		self.path_memoizer = {}
+		self.distance_matrix, self.paths_on_arch = process_coupling_map(coupling_map, slack, edge_weights=edge_weights)	
+
+		self.fake_run = False
 			
-	def run(self, dag, primary_layer_view=None, secondary_layer_view=None, fake_run=False):
+	def run(self, dag, primary_layer_view=None, secondary_layer_view=None):
 		mapped_dag = dag._copy_circuit_metadata()
 		canonical_register = dag.qregs["q"]
 		current_layout = Layout.generate_trivial_layout(canonical_register)
@@ -69,8 +70,8 @@ class MPATH_IPS(TransformationPass):
 				min_depth = depth
 		self.property_set['final_layout'] = min_layout
 
-		if fake_run:
-			return None	
+		if self.fake_run:
+			return mapped_dag	
 		# Else build the dag.
 		for layer in min_solution:
 			for node in layer:
@@ -158,7 +159,22 @@ class MPATH_IPS(TransformationPass):
 		if len(primary_layer_view) == 1:
 			post_primary_layer_view = []
 		else:
-			post_primary_layer_view = list(primary_layer_view)[1:]
+			post_primary_layer_view = []
+			visited = set()
+			for i in range(1, min(len(primary_layer_view), 30)):
+				curr_layer = []
+				for node in primary_layer_view[i]:
+					q0, q1 = node.qargs
+					if q0 in visited or q1 in visited:
+						visited.add(q0)
+						visited.add(q1)
+						continue
+					visited.add(q0)
+					visited.add(q1)
+					curr_layer.append(node)
+				if curr_layer:
+					post_primary_layer_view.append(curr_layer)
+
 		# Process operations in layer
 		for op in secondary_layer_view[0]:
 			output_layers[0].append(self._remap_gate_for_layout(op, current_layout, canonical_register))
@@ -176,7 +192,6 @@ class MPATH_IPS(TransformationPass):
 		# Build PPC and get candidate list.
 		if len(path_collection_list) == 0:
 			return [(output_layers, current_layout, 0)] 
-		#print([(q0.index, q1.index) for (q0, q1) in target_list])
 		path_selector = IPSSelector(path_collection_list, len(self.coupling_map.physical_qubits), len(path_collection_list))
 		candidate_list, suggestions = path_selector.find_and_join(self, target_list, current_layout, post_primary_layer_view)
 		if candidate_list is None:  # We failed, take the suggestions.
@@ -248,37 +263,8 @@ class MPATH_IPS(TransformationPass):
 		if self.coupling_map.graph.has_edge(p0, p1):
 			return []
 		# Get path candidates from _path_select.
-		path_candidates = self._path_select(p0, p1)
+		path_candidates = self.paths_on_arch[(p0, p1)]
 		return [self._path_minfold(path, current_layout, post_primary_layer_view) for path in path_candidates]
-	
-	def _path_select(self, source, sink):
-		memoizer_entry = (source, sink) if source < sink else (sink, source)
-		if memoizer_entry in self.path_memoizer:
-			return self.path_memoizer[memoizer_entry]
-		max_length = self.coupling_map.distance_matrix[source, sink] + self.slack
-	
-		path_candidates = []
-
-		bfs_queue = deque([(source, [])])
-		# Perform modified DFS to find paths upto length "max_swaps".
-		# We will not mark vertices as visited.
-		while bfs_queue and len(path_candidates) < self.max_path_limit:
-			v, prev = bfs_queue.popleft()	
-			if v == sink:
-				path_candidates.append(prev)  # We have found the sink, add the corresponding path.
-				continue
-			for w in self.coupling_map.graph.neighbors(v):
-				# IF w is too far from the sink, THEN do not add w.
-				edge = (v, w) if v < w else (w, v)	
-				if len(prev) + self.coupling_map.distance_matrix[w, sink] > max_length:
-					continue
-				elif len(prev) > 0 and prev[-1] == edge:
-					continue
-				prev_cpy = copy(prev)
-				prev_cpy.append(edge)
-				bfs_queue.append((w, prev_cpy))
-		self.path_memoizer[memoizer_entry] = path_candidates
-		return path_candidates
 	
 	def _path_minfold(self, path, current_layout, post_primary_layer_view):
 		min_dist = -1
@@ -330,7 +316,7 @@ class MPATH_IPS(TransformationPass):
 				size += 1
 		max_allowed_size = 0
 		for (v0, v1) in target_list:
-			max_allowed_size += self.coupling_map.distance_matrix[current_layout[v0], current_layout[v1]]
+			max_allowed_size += self.distance_matrix[current_layout[v0]][current_layout[v1]]
 			p0, p1 = test_layout[v0], test_layout[v1]
 			if not self.coupling_map.graph.has_edge(p0, p1):
 				return False, 0
@@ -349,13 +335,16 @@ class MPATH_IPS(TransformationPass):
 	def _distf(self, post_primary_layer_view, test_layout):
 		dist = 0.0
 		num_ops = 0
-		for r in range(0, min(len(post_primary_layer_view), 100+1)):
+		for r in range(0, len(post_primary_layer_view)):
 			post_layer = post_primary_layer_view[r]
 			sub_sum = 0.0
 			for node in post_layer:
 				q0, q1 = node.qargs
 				num_ops += 1
-				sub_sum += self.coupling_map.distance_matrix[test_layout[q0], test_layout[q1]] / (r+1)
+				sub_sum += self.distance_matrix[test_layout[q0]][test_layout[q1]]
 			dist += sub_sum 
-		return dist/(1+num_ops)
+		if num_ops == 0:
+			return 0
+		else:
+			return dist/num_ops
 

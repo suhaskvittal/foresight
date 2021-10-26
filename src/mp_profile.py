@@ -10,7 +10,7 @@ from qiskit.transpiler.passes import *
 import numpy as np
 import pandas as pd
 
-from mp_benchmark import BenchmarkPass
+from mp_benchmark_pass import BenchmarkPass
 from mp_util import G_IBM_TORONTO,\
 					G_QISKIT_GATE_SET,\
 					G_ZULEHNER
@@ -43,65 +43,20 @@ def profile_optimal_ips_workload(out_file):
 		data['size'].append(circ.size())
 		data['depth'].append(circ.depth())
 
-		density_mean, density_std = compute_per_layer_density_2q(circ)
-		data['layer density, mean'].append(density_mean)
-		data['layer density, std'].append(density_std)
-		child_distance_mean, child_distance_std = compute_child_distance_2q(circ)
-		data['child distance, mean'].append(child_distance_mean)
-		data['child distance, std'].append(child_distance_std)
-		# Measure improvement
 		print('\trunning profiler')
 		profile_pm.run(circ)
 		benchmark_results = benchmark_pass.benchmark_results
 		data['improvement'].append((benchmark_results['SABRE CNOTs'] - benchmark_results['MPATH_IPS CNOTs']) / (benchmark_results['SABRE CNOTs']))
+		data['layer density, mean'].append(benchmark_results['Layer Density, mean'])
+		data['layer density, std'].append(benchmark_results['Layer Density, std.'])
+		data['child distance, mean'].append(benchmark_results['Child Distance, mean'])
+		data['child distance, std'].append(benchmark_results['Child Distance, std.'])
+		# Measure improvement
 		# Logging
 		for x in data:
 			print('\t%s: %.3f' % (x, data[x][-1]))
 	df = pd.DataFrame(data=data, index=used_benchmarks)
 	df.to_csv(out_file)
-	
-def compute_per_layer_density_2q(circuit):
-	dag = circuit_to_dag(circuit) 
-	dag_layers = dag.layers()
-	densities = []
-	for layer in dag_layers:
-		densities.append(len([node for node in layer['graph'].front_layer() if node.type == 'op' and len(node.qargs) == 2]))
-	return np.mean(densities), np.std(densities)
-	
-def compute_child_distance_2q(circuit):
-	dag = circuit_to_dag(circuit)
-	dag_layers = dag.layers()
-	child_mark_map = {}
-
-	node_to_parent = {}
-	for node in dag.front_layer():
-		if node.type == 'op' and len(node.qargs) == 2:
-			q0, q1 = node.qargs
-			node_to_parent[q0] = (0, node)
-			node_to_parent[q1] = (0, node)
-	n = 0
-	child_distances = []
-	num_layers = 0
-	for layer in dag_layers:
-		if num_layers == 0:
-			num_layers += 1
-			continue
-		for child in layer['graph'].front_layer():
-			if child.type != 'op' or len(child.qargs) != 2:
-				continue
-			q0, q1 = child.qargs
-			left_parent = None
-			if q0 in node_to_parent:
-				home_layer, parent = node_to_parent[q0]
-				child_distances.append(num_layers - home_layer)
-				left_parent = parent
-			node_to_parent[q0] = (num_layers, child)
-			if q1 in node_to_parent and left_parent != node_to_parent[q1][1]:
-				home_layer, parent = node_to_parent[q1]
-				child_distances.append(num_layers - home_layer)
-			node_to_parent[q1] = (num_layers, child)
-		num_layers += 1
-	return np.mean(child_distances), np.std(child_distances)
 				
 if __name__ == '__main__':
 	out_file = argv[1]
