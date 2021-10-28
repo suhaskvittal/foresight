@@ -13,9 +13,12 @@ from qiskit.transpiler.passes import *
 from timeit import default_timer as timer
 from copy import copy, deepcopy
 
-from layerview import LayerViewPass
+from mp_layerview import LayerViewPass
 from mp_ips import MPATH_IPS
 from mp_bsp import MPATH_BSP
+from mp_hybrid import MPATH_HYBRID
+from mp_hybrid_sabreswap import MPATH_HYBRID_SabreSwap
+from mp_hybrid_ips import MPATH_HYBRID_IPS
 from mp_exec import _bench_and_cmp, _pad_circuit_to_fit, draw
 from mp_util import G_QISKIT_GATE_SET,\
 					G_MPATH_IPS_SLACK,\
@@ -27,28 +30,44 @@ import numpy as np
 from collections import defaultdict
 
 class BenchmarkPass(AnalysisPass):
-	def __init__(self, coupling_map, compare=['sabre', 'ips', 'bsp'], runs=5):
+	def __init__(self, coupling_map, hybrid_data_file, compare=['sabre', 'ips', 'bsp', 'hybrid'], runs=5):
 		super().__init__()
 
 		self.benchmark_list = compare
 
-		self.sabre_pass = PassManager([
-			SabreSwap(coupling_map, heuristic='decay'),
-			Unroller(G_QISKIT_GATE_SET)
-		])
-		self.ips_pass = PassManager([
-			MPATH_IPS(
+		sabre_router = SabreSwap(coupling_map, heuristic='decay')
+		ips_router = MPATH_IPS(
 				coupling_map,
 				slack=G_MPATH_IPS_SLACK,
 				solution_cap=G_MPATH_IPS_SOLN_CAP
-			),
+			)
+		bsp_router = MPATH_BSP(
+				coupling_map,
+				tree_width_limit=G_MPATH_BSP_TREE_WIDTH
+			)
+		# Declare hybrid routers.
+		hybrid_sabre = MPATH_HYBRID_SabreSwap(coupling_map, heuristic='decay')
+		hybrid_ips = MPATH_HYBRID_IPS(
+				coupling_map,
+				slack=G_MPATH_IPS_SLACK,
+				solution_cap=G_MPATH_IPS_SOLN_CAP
+			)
+		hybrid_router = MPATH_HYBRID(hybrid_sabre, hybrid_ips, bsp_router, hybrid_data_file)
+
+		self.sabre_pass = PassManager([
+			sabre_router,
+			Unroller(G_QISKIT_GATE_SET)
+		])
+		self.ips_pass = PassManager([
+			ips_router,
 			Unroller(G_QISKIT_GATE_SET)
 		])
 		self.bsp_pass = PassManager([
-			MPATH_BSP(
-				coupling_map,
-				tree_width_limit=G_MPATH_BSP_TREE_WIDTH
-			),
+			bsp_router,
+			Unroller(G_QISKIT_GATE_SET)
+		])
+		self.hybrid_pass = PassManager([
+			hybrid_router,
 			Unroller(G_QISKIT_GATE_SET)
 		])
 		self.look_pass = PassManager([
@@ -97,6 +116,16 @@ class BenchmarkPass(AnalysisPass):
 					self.benchmark_results['MPATH_BSP CNOTs'] = bsp_cnots
 					self.benchmark_results['MPATH_BSP Depth'] = (bsp_circ.depth())
 					self.benchmark_results['MPATH_BSP Time'] = (end - start)
+			# MPATH HYBRID
+			if 'hybrid' in self.benchmark_list:
+				start = timer()
+				hybrid_circ = self.hybrid_pass.run(original_circuit)
+				end = timer()
+				hybrid_cnots = hybrid_circ.count_ops()['cx'] - original_circuit_cx
+				if r == 0 or self.benchmark_results['MPATH_HYBRID CNOTs'] > hybrid_cnots:
+					self.benchmark_results['MPATH_HYBRID CNOTs'] = hybrid_cnots
+					self.benchmark_results['MPATH_HYBRID Depth'] = (hybrid_circ.depth())
+					self.benchmark_results['MPATH_HYBRID Time'] = (end - start)
 			# LOOK
 			if 'look' in self.benchmark_list:
 				try:
@@ -112,10 +141,10 @@ class BenchmarkPass(AnalysisPass):
 					self.benchmark_results['LOOK Depth'] = -1.0
 					self.benchmark_results['LOOK Time'] = -1.0
 		# Some circuit statistics as well.
-#		self.benchmark_results['Layer Density, mean'], self.benchmark_results['Layer Density, std.'] =\
-#			compute_per_layer_density_2q(original_circuit)
-#		self.benchmark_results['Child Distance, mean'], self.benchmark_results['Child Distance, std.'] =\
-#			compute_child_distance_2q(original_circuit)
+		self.benchmark_results['Layer Density, mean'], self.benchmark_results['Layer Density, std.'] =\
+			compute_per_layer_density_2q(original_circuit)
+		self.benchmark_results['Child Distance, mean'], self.benchmark_results['Child Distance, std.'] =\
+			compute_child_distance_2q(original_circuit)
 	
 def compute_per_layer_density_2q(circuit):
 	dag = circuit_to_dag(circuit) 

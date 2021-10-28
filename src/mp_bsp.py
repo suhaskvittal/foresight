@@ -26,8 +26,9 @@ class MPATH_BSP(TransformationPass):
 
 		self.coupling_map = coupling_map		
 		self.tree_width_limit = tree_width_limit
-
 		self.distance_matrix, _ = _floyd_warshall(coupling_map, edge_weights=edge_weights)
+
+		self.fake_run = False
 			
 	def run(self, dag, primary_layer_view=None, secondary_layer_view=None):
 		canonical_register = dag.qregs["q"]
@@ -67,10 +68,14 @@ class MPATH_BSP(TransformationPass):
 				else:
 					# Apply output list and exit.
 					mapped_dag = dag._copy_circuit_metadata()
+					final_layout = current_layout
 					for node in tree_node.output_list:
-						mapped_dag.apply_operation_back(node.op, node.qargs, node.cargs)
+						if not self.fake_run:
+							mapped_dag.apply_operation_back(node.op, node.qargs, node.cargs)
+						final_layout = tree_node.current_layout
 					if min_dag is None or mapped_dag.size() < min_dag.size() or (mapped_dag.size() == min_dag.size() and mapped_dag.depth() < min_dag.depth()):
 						min_dag = mapped_dag
+						self.property_set['final_layout'] = final_layout
 			current_tree_layer = next_tree_layer
 		return min_dag
 	

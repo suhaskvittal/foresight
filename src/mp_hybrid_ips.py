@@ -1,6 +1,6 @@
 """
 	author: Suhas Vittal
-	date:	29 September 2021 @ 2:09 p.m. EST
+	date:	27 October 2021
 """
 
 from qiskit.circuit import Qubit
@@ -20,8 +20,7 @@ import numpy as np
 from copy import copy, deepcopy
 from collections import deque
 
-# MPATH_IPS ; IPS = Intelligent path selection
-class MPATH_IPS(TransformationPass):
+class MPATH_HYBRID_IPS(TransformationPass):
 	def __init__(self, coupling_map, slack=2, solution_cap=32, edge_weights=None):
 		super().__init__()
 
@@ -32,6 +31,7 @@ class MPATH_IPS(TransformationPass):
 		self.distance_matrix, self.paths_on_arch = process_coupling_map(coupling_map, slack, edge_weights=edge_weights)	
 
 		self.fake_run = False
+		self.future_layers = None
 			
 	def run(self, dag):
 		mapped_dag = dag._copy_circuit_metadata()
@@ -172,6 +172,20 @@ class MPATH_IPS(TransformationPass):
 					curr_layer.append(node)
 				if curr_layer:
 					post_primary_layer_view.append(curr_layer)
+			if i == len(primary_layer_view) and self.future_layers is not None:  # Then add operations from future layers.
+				for i in range(len(self.future_layers)):
+					curr_layers = []
+					for node in self.future_layers[i]:
+						q0, q1 = node.qargs
+						if q0 in visited or q1 in visited:
+							visited.add(q0)
+							visited.add(q1)
+							continue
+						visited.add(q0)
+						visited.add(q1)
+						curr_layer.append(node)
+					if curr_layer:
+						post_primary_layer_view.append(curr_layer)
 
 		# Process operations in layer
 		for op in secondary_layer_view[0]:

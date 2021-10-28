@@ -12,7 +12,7 @@ from qiskit import Aer
 
 import numpy as np
 
-from layerview import LayerViewPass
+from mp_layerview import LayerViewPass
 from mp_bsp import MPATH_BSP
 from mp_ips import MPATH_IPS
 from mp_util import G_QISKIT_GATE_SET,\

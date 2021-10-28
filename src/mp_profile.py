@@ -12,6 +12,8 @@ import pandas as pd
 
 from mp_benchmark_pass import BenchmarkPass
 from mp_util import G_IBM_TORONTO,\
+					G_RIGETTI_ASPEN9,\
+					G_GOOGLE_WEBER,\
 					G_QISKIT_GATE_SET,\
 					G_ZULEHNER
 from mp_exec import _pad_circuit_to_fit
@@ -20,11 +22,10 @@ from copy import copy
 from sys import argv
 from collections import defaultdict
 
-def profile_optimal_ips_workload(out_file):
-	coupling_map = G_IBM_TORONTO
+def profile_optimal_workload(out_file, coupling_map):
 	data = defaultdict(list)	
 
-	benchmark_pass = BenchmarkPass(coupling_map, compare=['sabre', 'ips'], runs=1)
+	benchmark_pass = BenchmarkPass(coupling_map, compare=['sabre', 'ips', 'bsp'], runs=1)
 	profile_pm = PassManager([
 		Unroller(G_QISKIT_GATE_SET),
 		SabreLayout(coupling_map, routing_pass=SabreSwap(coupling_map, heuristic='decay')),
@@ -35,7 +36,7 @@ def profile_optimal_ips_workload(out_file):
 	used_benchmarks = []
 	for qb_file in G_ZULEHNER:
 		circ = QuantumCircuit.from_qasm_file('benchmarks/zulehner/%s' % qb_file)
-		if circ.depth() > 2000 or circ.depth() < 100:
+		if circ.depth() > 500 or circ.depth() < 100:
 			continue
 		used_benchmarks.append(qb_file)
 		_pad_circuit_to_fit(circ, coupling_map)
@@ -46,11 +47,8 @@ def profile_optimal_ips_workload(out_file):
 		print('\trunning profiler')
 		profile_pm.run(circ)
 		benchmark_results = benchmark_pass.benchmark_results
-		data['improvement'].append((benchmark_results['SABRE CNOTs'] - benchmark_results['MPATH_IPS CNOTs']) / (benchmark_results['SABRE CNOTs']))
-		data['layer density, mean'].append(benchmark_results['Layer Density, mean'])
-		data['layer density, std'].append(benchmark_results['Layer Density, std.'])
-		data['child distance, mean'].append(benchmark_results['Child Distance, mean'])
-		data['child distance, std'].append(benchmark_results['Child Distance, std.'])
+		for x in benchmark_results:
+			data[x].append(benchmark_results[x])
 		# Measure improvement
 		# Logging
 		for x in data:
@@ -60,5 +58,13 @@ def profile_optimal_ips_workload(out_file):
 				
 if __name__ == '__main__':
 	out_file = argv[1]
-	profile_optimal_ips_workload(out_file)
+	coupling_map_name = argv[2]
+
+	if coupling_map_name == 'toronto':
+		coupling_map = G_IBM_TORONTO
+	elif coupling_map_name == 'aspen9':
+		coupling_map = G_RIGETTI_ASPEN9
+	elif coupling_map_name == 'weber':
+		coupling_map = G_GOOGLE_WEBER
+	profile_optimal_workload(out_file, coupling_map)
 				

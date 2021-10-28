@@ -15,7 +15,7 @@ from qiskit.exceptions import QiskitError
 from timeit import default_timer as timer
 from copy import copy, deepcopy
 
-from layerview import LayerViewPass
+from mp_layerview import LayerViewPass
 from mp_ips import MPATH_IPS
 from mp_bsp import MPATH_BSP
 from mp_exec import _bench_and_cmp, _pad_circuit_to_fit, draw
@@ -42,12 +42,12 @@ from collections import defaultdict
 from os import listdir
 from os.path import isfile, join
 	
-def b_qasmbench(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv', runs=5):
+def b_qasmbench(coupling_map, arch_file, hybrid_data_file, dataset='medium', out_file='qasmbench.csv', runs=5):
 	basis_pass = Unroller(G_QISKIT_GATE_SET)
 
 	mapping_pass = SabreLayout(coupling_map, routing_pass=SabreSwap(coupling_map, heuristic='decay'))
 	data = {}
-	benchmark_pass = BenchmarkPass(coupling_map, runs=runs, compare=['sabre', 'ips', 'bsp'])
+	benchmark_pass = BenchmarkPass(coupling_map, hybrid_data_file, runs=runs, compare=['sabre', 'hybrid'])
 	benchmark_pm = PassManager([
 		basis_pass, 
 		mapping_pass, 
@@ -143,10 +143,13 @@ if __name__ == '__main__':
 	if coupling_style == 'toronto':
 		coupling_map = G_IBM_TORONTO 
 		arch_file = 'arch/ibm_toronto.arch'  # For use with QMAP (Zulehner et al.)
+		hybrid_data_file = 'profiles/toronto_profile.csv'
 	elif coupling_style == 'weber':
 		coupling_map = G_GOOGLE_WEBER
 		arch_file = 'arch/google_weber.arch'
+		hybrid_data_file = 'profiles/weber_profile.csv'
 	elif coupling_style == 'aspen9':
 		coupling_map = G_RIGETTI_ASPEN9
 		arch_file = 'arch/rigetti_aspen9.arch'
-	b_qasmbench(coupling_map, arch_file, dataset=mode, runs=runs, out_file=file_out)
+		hybrid_data_file = 'profiles/aspen9_profile.csv'
+	b_qasmbench(coupling_map, arch_file, hybrid_data_file, dataset=mode, runs=runs, out_file=file_out)
