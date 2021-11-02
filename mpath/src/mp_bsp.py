@@ -13,6 +13,7 @@ from qiskit.circuit.library import CXGate, SwapGate, Measure
 from mp_swap_priority_queue import SwapPriorityQueue
 from mp_swap_tree import SwapTreeNode
 from mp_dist import _floyd_warshall
+from mp_util import _path_hash_f
 
 import numpy as np
 
@@ -60,7 +61,7 @@ class MPATH_BSP(TransformationPass):
 			next_tree_layer = []
 			for tree_node in current_tree_layer:
 				if tree_node.front_layer:
-					children, invalids = self.exec_on_subtree(tree_node, dag, canonical_register)
+					children = self.exec_on_subtree(tree_node, dag, canonical_register)
 					for (i, c) in enumerate(children):
 						next_tree_layer.append(c)
 						if c.is_lma:
@@ -103,7 +104,6 @@ class MPATH_BSP(TransformationPass):
 			min_swap_list.append(swap)
 		# Create SwapTreeNodes for all swaps in min_swap_list
 		child_array = []
-		invalidated = []
 		for (p0, p1) in min_swap_list:
 			test_layout = root.current_layout.copy()
 			test_layout.swap(p0, p1)
@@ -129,20 +129,18 @@ class MPATH_BSP(TransformationPass):
 				child_tree_node.last_modifying_ancestor = child_tree_node  
 				child_tree_node.is_lma = True
 				self._traverse_execution_deque(exec_deque, child_tree_node, dag, canonical_register)
-				invalidated.append(root.last_modifying_ancestor)
 			child_array.append(child_tree_node)
-		return child_array, invalidated
+		return child_array
 	
 	def _contract_tree(self, lma_list, dag, canonical_register):
 		# Contract for each last modifying ancestor.
 		# Last modifying ancestor is contiguous.
 		# Perform a DFS on each lma if they are valid.
-		new_lma_list = []
+		used_hashes = set()
+		min_leaves, min_score = [], -1
 		for lma in lma_list:
 			if lma.valid == 0:
 				continue
-			min_leaves, min_score = None, -1
-			output_size_ref = None
 			dfs_stack = [(lma, [])]
 			while dfs_stack:
 				tree_node, swap_list = dfs_stack.pop()
@@ -158,26 +156,33 @@ class MPATH_BSP(TransformationPass):
 						dfs_stack.append((c, swap_list_cpy))
 				else:  # This is a leaf.
 					# Score the leaf.
-					post_layers = self._get_post_layers(tree_node, dag)
-					if output_size_ref is None:
-						output_size_ref = len(swap_list_cpy) + len(tree_node.output_list)
-					score = self._distf(tree_node.front_layer, post_layers, tree_node.current_layout)\
-						+ (len(swap_list_cpy) + len(tree_node.output_list))/output_size_ref * 0.0
+					post_layers = self._get_post_layers(tree_node, dag, number=100)
+					score = self._distf(tree_node.front_layer, post_layers, tree_node.current_layout, weight=True)
 					# update min leaves
 					if min_score < 0 or score <= min_score:
+						# Create hash of the swap_list contents.
+						swap_hash = 0
+						PRIME = 5586537595543
 						for node in swap_list_cpy:
 							tree_node.output_list.append(node)
+							q0, q1 = node.qargs
+							swap_hash += (2**tree_node.current_layout[q0])*(3**tree_node.current_layout[q1]) % PRIME 
+						if swap_hash in used_hashes:
+							continue
+						else:
+							used_hashes.add(swap_hash)
 						tree_node.last_modifying_ancestor = tree_node
 						tree_node.is_lma = True
 						tree_node.swap = None
 						if min_score < 0 or score < min_score:
-							min_leaves = [tree_node]
+							if score*1.1 < min_score:
+								min_leaves = [tree_node]
+							else:
+								min_leaves.append(tree_node)
 							min_score = score
-						elif min_score == score:
+						elif min_score <= score*1.1:
 							min_leaves.append(tree_node)
-			if min_leaves:
-				new_lma_list.extend(min_leaves)
-		return new_lma_list
+		return min_leaves
 
 	def _collapse_swap_tree(self, tree_node, canonical_register):
 		# Get swaps until we reach last modifying ancestor (if lma, then valid bit of node is 0).
@@ -261,7 +266,7 @@ class MPATH_BSP(TransformationPass):
 		test_layout.swap(p0, p1)
 		return self._distf(front_layer, post_layers, test_layout)
 
-	def _distf(self, front_layer, post_layers, current_layout):
+	def _distf(self, front_layer, post_layers, current_layout, weight=False):
 		if len(front_layer) == 0:
 			return 0
 		dist = 0.0
@@ -279,7 +284,10 @@ class MPATH_BSP(TransformationPass):
 				q0, q1 = node.qargs
 				num_ops += 1
 				sub_sum += self.distance_matrix[current_layout[q0]][current_layout[q1]]
-			post_dist += sub_sum
+			if weight:
+				post_dist += sub_sum / r
+			else:
+				post_dist += sub_sum
 		if num_ops > 0:
 			dist += post_dist*0.5/num_ops
 		return dist
