@@ -14,8 +14,8 @@ from mp_layerview import LayerViewPass
 from mp_ips_selector import IPSSelector
 from mp_sum_tree import SumTreeNode
 from mp_dist import process_coupling_map
-from mp_util import _compute_per_layer_density_2q, _compute_child_distance_2q
 import mp_hybrid_sabreswap
+from mp_stat import get_independent_variable
 
 import numpy as np
 
@@ -25,7 +25,7 @@ from collections import deque, defaultdict
 import warnings
 
 class MPATH_HYBRID_IPS(TransformationPass):
-    def __init__(self, coupling_map, classifier, slack=2, solution_cap=32, edge_weights=None):
+    def __init__(self, coupling_map, regressor, slack=2, solution_cap=32, edge_weights=None):
         super().__init__()
 
         self.slack = slack
@@ -34,7 +34,7 @@ class MPATH_HYBRID_IPS(TransformationPass):
 
         self.distance_matrix, self.paths_on_arch = process_coupling_map(coupling_map, slack, edge_weights=edge_weights) 
 
-        self.classifier = classifier
+        self.regressor = regressor
 
         self.fake_run = False
         self.router_usage = defaultdict(int)
@@ -71,7 +71,7 @@ class MPATH_HYBRID_IPS(TransformationPass):
             min_layout = None
             min_dag = None
             min_router_usage = defaultdict(int)
-            sabre = mp_hybrid_sabreswap.MPATH_HYBRID_SabreSwap(self.coupling_map, self.classifier, heuristic='decay')
+            sabre = mp_hybrid_sabreswap.MPATH_HYBRID_SabreSwap(self.coupling_map, self.regressor, heuristic='decay')
             for (layout, soln, size) in solutions:
                 post_dag = mapped_dag._copy_circuit_metadata()
                 for i in range(len(primary_layer_view)):
@@ -142,11 +142,9 @@ class MPATH_HYBRID_IPS(TransformationPass):
             if len(primary_layer_view) == 0:
                 break
             # Check statistics.
-            dens_mean, dens_std = _compute_per_layer_density_2q(primary_layer_view)
-            cdist_mean, cdist_std = _compute_child_distance_2q(primary_layer_view)
-            X = np.array([[dens_mean, dens_std, cdist_mean, cdist_std]])
-            y = self.classifier.predict(X)
-            if y[0] == 0:  # Stop using IPS
+            X = get_independent_variable(primary_layer_view)
+            y = self.regressor.predict(X)
+            if y[0] > 0:  # Stop using IPS
                 exec_rest = True
                 break
 

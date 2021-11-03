@@ -19,13 +19,11 @@ from mp_bsp import MPATH_BSP
 from mp_hybrid import MPATH_HYBRID
 from mp_stat import load_classifier
 from mp_exec import _bench_and_cmp, _pad_circuit_to_fit, draw
-from mp_util import G_QISKIT_GATE_SET,\
-                    G_MPATH_IPS_SLACK,\
-                    G_MPATH_IPS_SOLN_CAP,\
-                    G_MPATH_BSP_TREE_WIDTH,\
-                    _compute_per_layer_density_2q,\
-                    _compute_child_distance_2q
-                
+from mp_util import _compute_per_layer_density_2q,\
+                    _compute_child_distance_2q,\
+                    _compute_size_depth_ratio_2q,\
+                    _compute_in_layer_qubit_distance_2q
+from mp_util import G_MPATH_IPS_SLACK, G_MPATH_IPS_SOLN_CAP, G_MPATH_BSP_TREE_WIDTH, G_QISKIT_GATE_SET
 
 import numpy as np
 
@@ -175,4 +173,8 @@ class BenchmarkPass(AnalysisPass):
             _compute_per_layer_density_2q(primary_layer_view)
         self.benchmark_results['Child Distance, mean'], self.benchmark_results['Child Distance, std.'] =\
             _compute_child_distance_2q(primary_layer_view)
+        self.benchmark_results['Size-Depth Ratio'] =\
+            _compute_size_depth_ratio_2q(primary_layer_view)
+        self.benchmark_results['In Layer Distance, mean'], self.benchmark_results['In Layer Distance, std.'] =\
+            _compute_in_layer_qubit_distance_2q(primary_layer_view)
     

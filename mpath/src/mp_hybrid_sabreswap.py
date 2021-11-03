@@ -32,7 +32,8 @@ from qiskit.dagcircuit import DAGNode
 
 from mp_layerview import LayerViewPass
 import mp_hybrid_ips
-from mp_util import G_MPATH_IPS_SOLN_CAP, G_MPATH_IPS_SLACK, _compute_per_layer_density_2q, _compute_child_distance_2q
+from mp_util import G_MPATH_IPS_SOLN_CAP, G_MPATH_IPS_SLACK
+from mp_stat import get_independent_variable
 
 import warnings
 
@@ -46,7 +47,7 @@ DECAY_RESET_INTERVAL = 5  # How often to reset all decay rates to 1.
 
 
 class MPATH_HYBRID_SabreSwap(TransformationPass):
-    def __init__(self, coupling_map, classifier, heuristic="basic", seed=None, fake_run=False, metric_refresh_rate=10):
+    def __init__(self, coupling_map, regressor, heuristic="basic", seed=None, fake_run=False, metric_refresh_rate=10):
         """SabreSwap initializer.
 
         Args:
@@ -75,7 +76,7 @@ class MPATH_HYBRID_SabreSwap(TransformationPass):
         self._bit_indices = None
 
         self.metric_refresh_rate = metric_refresh_rate
-        self.classifier = classifier
+        self.regressor = regressor
         self.router_usage = defaultdict(int)
 
     def run(self, dag):
@@ -150,11 +151,9 @@ class MPATH_HYBRID_SabreSwap(TransformationPass):
                 primary_layer_view = new_primary_layer_view
                 secondary_layer_view = new_secondary_layer_view
                 # Now, determine if we stop using SABRE.
-                dens_mean, dens_std = _compute_per_layer_density_2q(primary_layer_view)
-                cdist_mean, cdist_std = _compute_child_distance_2q(primary_layer_view)
-                X = np.array([[dens_mean, dens_std, cdist_mean, cdist_std]])
-                y = self.classifier.predict(X)
-                if y[0] == 1:  # Stop using SABRE.
+                X = get_independent_variable(primary_layer_view)
+                y = self.regressor.predict(X)
+                if y[0] < 0:  # Stop using SABRE.
                     exec_rest = True
                     break
 
@@ -237,7 +236,7 @@ class MPATH_HYBRID_SabreSwap(TransformationPass):
                 for node in secondary_layer_view[i]:
                     self._apply_gate(post_dag, node, current_layout, canonical_register)
             # Run new routing algorithm on the post dag.
-            ips = mp_hybrid_ips.MPATH_HYBRID_IPS(self.coupling_map, self.classifier, slack=G_MPATH_IPS_SLACK, solution_cap=4)
+            ips = mp_hybrid_ips.MPATH_HYBRID_IPS(self.coupling_map, self.regressor, slack=G_MPATH_IPS_SLACK, solution_cap=G_MPATH_IPS_SOLN_CAP)
             post_dag = ips.run(post_dag)
             # Merge results.
             current_layout = ips.property_set['final_layout']

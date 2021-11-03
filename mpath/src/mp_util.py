@@ -49,7 +49,7 @@ G_QISKIT_GATE_SET = ['u1', 'u2', 'u3', 'cx']
 # BENCHMARK SUITES
 G_QASMBENCH_MEDIUM = [
     'adder_n10',        # single adder
-    'qft_n15',
+#    'qft_n15',
     'dnn_n8',           # quantum deep neural net
     'cc_n12',           # counterfeit coin
     'multiplier_n15',   # binary multiplier
@@ -82,7 +82,7 @@ G_ZULEHNER = [f for f in listdir('benchmarks/zulehner') if isfile(join('benchmar
 G_QAOA = _sk_benchmarks()
 
 # ALGORITHM PARAMETERS
-G_MPATH_IPS_SOLN_CAP = 16
+G_MPATH_IPS_SOLN_CAP = 4
 G_MPATH_IPS_SLACK = 2
 G_MPATH_BSP_TREE_WIDTH = 32
 
@@ -110,15 +110,15 @@ def _path_to_swap_collection(path):
 def _is_pow2(x):
     return (x & (x-1)) == 0
     
-def _compute_per_layer_density_2q(primary_layer_view):
+def _compute_per_layer_density_2q(primary_layer_view, weighted=False):
     if len(primary_layer_view)==0:
         return 0, 0
     densities = []
-    for layer in primary_layer_view:
+    for (i, layer) in enumerate(primary_layer_view):
         densities.append(len(layer))
     return np.mean(densities), np.std(densities)
 
-def _compute_child_distance_2q(primary_layer_view):
+def _compute_child_distance_2q(primary_layer_view, weighted=False):
     if len(primary_layer_view)==0:
         return 0, 0
     node_to_parent = {}
@@ -150,3 +150,25 @@ def _compute_child_distance_2q(primary_layer_view):
         return 0, 0
     else:
         return np.mean(child_distances), np.std(child_distances)
+
+def _compute_size_depth_ratio_2q(primary_layer_view):
+    return sum(len(layer) for layer in primary_layer_view) / len(primary_layer_view)
+
+def _compute_in_layer_qubit_distance_2q(primary_layer_view):
+    distances = []
+    for layer in primary_layer_view:
+        used_qubits_left = []
+        used_qubits_right = []
+        for node in layer:
+            q0, q1 = node.qargs
+            used_qubits_left.append(q0.index)
+            used_qubits_right.append(q1.index)
+        d = 0
+        for i in range(len(used_qubits_left)):
+            q0, q1 = used_qubits_left[i], used_qubits_right[i]
+            for j in range(i+1, len(used_qubits_left)):
+                r0, r1 = used_qubits_left[j], used_qubits_right[j] 
+                d += abs(q0-r0)+abs(q0-r1)+abs(q1-r0)+abs(q1-r1)
+        distances.append(d)
+    return np.mean(distances), np.std(distances)
+    
