@@ -19,7 +19,7 @@ def _sk_benchmarks():
         export_data = pkl.load(reader)
     circs = []
     for family in export_data:
-        for grid_search_type in ['grid_search_30_30', 'grid_search_60_60']:
+        for grid_search_type in ['grid_search_60_60']:
             circs.append((family, grid_search_type, export_data[family][grid_search_type]['opt_circ'])) 
     return circs
 
