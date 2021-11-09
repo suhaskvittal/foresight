@@ -19,7 +19,7 @@ from qiskit.dagcircuit import DAGNode
 from qiskit.circuit.library import CXGate, SwapGate, Measure
 
 from mp_layerview import LayerViewPass
-from mp_stat import load_regressor, load_regressor, get_independent_variable
+from mp_stat import load_classifier, load_classifier, get_independent_variable
 from mp_util import G_MPATH_IPS_SLACK, G_MPATH_IPS_SOLN_CAP
 from mp_hybrid_sabreswap import MPATH_HYBRID_SabreSwap
 from mp_hybrid_ips import MPATH_HYBRID_IPS
@@ -35,7 +35,7 @@ class MPATH_HYBRID(TransformationPass):
     def __init__(self, coupling_map, profile_file, window_size=50):
         super().__init__()
         self.coupling_map = coupling_map
-        self.regressor = load_regressor(profile_file)
+        self.classifier = load_classifier(profile_file)
         
         self.fake_run = False
         self.router_usage = defaultdict(int)
@@ -58,13 +58,13 @@ class MPATH_HYBRID(TransformationPass):
         self.router_usage = defaultdict(int)
         # Get initial stats.
         X = get_independent_variable(primary_layer_view)
-        y = self.regressor.predict(X)
+        y = self.classifier.predict(X)
 
         router = None
-        if y >= 0:   # start with sabre.
-            router = MPATH_HYBRID_SabreSwap(self.coupling_map, self.regressor, heuristic='decay')
-        elif y < 0:
-            router = MPATH_HYBRID_IPS(self.coupling_map, self.regressor, slack=G_MPATH_IPS_SLACK, solution_cap=G_MPATH_IPS_SOLN_CAP)
+        if y == 0:   # start with sabre.
+            router = MPATH_HYBRID_SabreSwap(self.coupling_map, self.classifier, heuristic='decay')
+        elif y == 1:
+            router = MPATH_HYBRID_IPS(self.coupling_map, self.classifier, slack=G_MPATH_IPS_SLACK, solution_cap=G_MPATH_IPS_SOLN_CAP)
         mapped_dag = router.run(dag)
         self.property_set['final_layout'] = router.property_set['final_layout'] 
         self.router_usage['sabre'] = router.router_usage['sabre']

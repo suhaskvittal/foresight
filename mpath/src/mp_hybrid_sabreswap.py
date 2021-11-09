@@ -47,7 +47,7 @@ DECAY_RESET_INTERVAL = 5  # How often to reset all decay rates to 1.
 
 
 class MPATH_HYBRID_SabreSwap(TransformationPass):
-    def __init__(self, coupling_map, regressor, heuristic="basic", seed=None, fake_run=False, metric_refresh_rate=10):
+    def __init__(self, coupling_map, classifier, heuristic="basic", seed=None, fake_run=False, metric_refresh_rate=10):
         """SabreSwap initializer.
 
         Args:
@@ -76,7 +76,7 @@ class MPATH_HYBRID_SabreSwap(TransformationPass):
         self._bit_indices = None
 
         self.metric_refresh_rate = metric_refresh_rate
-        self.regressor = regressor
+        self.classifier = classifier
         self.router_usage = defaultdict(int)
 
     def run(self, dag):
@@ -132,31 +132,6 @@ class MPATH_HYBRID_SabreSwap(TransformationPass):
         exec_rest = False
         completed = set()
         while front_layer:
-            if len(primary_layer_view) > 20 and (number_of_swaps + 1) % self.metric_refresh_rate == 0:
-                # Update layer view.                 
-                new_primary_layer_view = []
-                new_secondary_layer_view = []
-                for i in range(len(primary_layer_view)):
-                    new_p_layer = []
-                    new_s_layer = []
-                    for node in primary_layer_view[i]:
-                        if node not in completed:
-                            new_p_layer.append(node)
-                    for node in secondary_layer_view[i]:
-                        if node not in completed:
-                            new_s_layer.append(node)
-                    if new_p_layer or new_s_layer:
-                        new_primary_layer_view.append(new_p_layer)
-                        new_secondary_layer_view.append(new_s_layer)
-                primary_layer_view = new_primary_layer_view
-                secondary_layer_view = new_secondary_layer_view
-                # Now, determine if we stop using SABRE.
-                X = get_independent_variable(primary_layer_view)
-                y = self.regressor.predict(X)
-                if y[0] < 0:  # Stop using SABRE.
-                    exec_rest = True
-                    break
-
             execute_gate_list = []
 
             # Remove as many immediately applicable gates as possible
@@ -186,6 +161,31 @@ class MPATH_HYBRID_SabreSwap(TransformationPass):
                 logger.debug("front_layer: %s", [(n.name, n.qargs) for n in front_layer])
 
                 continue
+            # If we are done executing, try to transition.
+            if len(primary_layer_view) > 20 and (number_of_swaps + 1) % self.metric_refresh_rate == 0:
+                # Update layer view.                 
+                new_primary_layer_view = []
+                new_secondary_layer_view = []
+                for i in range(len(primary_layer_view)):
+                    new_p_layer = []
+                    new_s_layer = []
+                    for node in primary_layer_view[i]:
+                        if node not in completed:
+                            new_p_layer.append(node)
+                    for node in secondary_layer_view[i]:
+                        if node not in completed:
+                            new_s_layer.append(node)
+                    if new_p_layer or new_s_layer:
+                        new_primary_layer_view.append(new_p_layer)
+                        new_secondary_layer_view.append(new_s_layer)
+                primary_layer_view = new_primary_layer_view
+                secondary_layer_view = new_secondary_layer_view
+                # Now, determine if we stop using SABRE.
+                X = get_independent_variable(primary_layer_view)
+                y = self.classifier.predict(X)
+                if y[0] == 1:  # Stop using SABRE.
+                    exec_rest = True
+                    break
 
             # After all free gates are exhausted, heuristically find
             # the best swap and insert it. When two or more swaps tie
@@ -236,7 +236,7 @@ class MPATH_HYBRID_SabreSwap(TransformationPass):
                 for node in secondary_layer_view[i]:
                     self._apply_gate(post_dag, node, current_layout, canonical_register)
             # Run new routing algorithm on the post dag.
-            ips = mp_hybrid_ips.MPATH_HYBRID_IPS(self.coupling_map, self.regressor, slack=G_MPATH_IPS_SLACK, solution_cap=G_MPATH_IPS_SOLN_CAP)
+            ips = mp_hybrid_ips.MPATH_HYBRID_IPS(self.coupling_map, self.classifier, slack=G_MPATH_IPS_SLACK, solution_cap=G_MPATH_IPS_SOLN_CAP)
             post_dag = ips.run(post_dag)
             # Merge results.
             current_layout = ips.property_set['final_layout']

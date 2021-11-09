@@ -42,6 +42,7 @@ def _read_arch_file(arch_file):
 G_IBM_TORONTO = _read_arch_file('arch/ibm_toronto.arch')
 G_GOOGLE_WEBER = _read_arch_file('arch/google_weber.arch')
 G_RIGETTI_ASPEN9 = _read_arch_file('arch/rigetti_aspen9.arch')
+G_IBM_TOKYO = _read_arch_file('arch/ibm_tokyo.arch')
 
 # GATE SETS
 G_QISKIT_GATE_SET = ['u1', 'u2', 'u3', 'cx']
@@ -82,8 +83,8 @@ G_ZULEHNER = [f for f in listdir('benchmarks/zulehner') if isfile(join('benchmar
 G_QAOA = _sk_benchmarks()
 
 # ALGORITHM PARAMETERS
-G_MPATH_IPS_SOLN_CAP = 4
-G_MPATH_IPS_SLACK = 2
+G_MPATH_IPS_SOLN_CAP = 32
+G_MPATH_IPS_SLACK = 3
 G_MPATH_BSP_TREE_WIDTH = 32
 
 def _soln_hash_f(soln):
@@ -110,12 +111,18 @@ def _path_to_swap_collection(path):
 def _is_pow2(x):
     return (x & (x-1)) == 0
     
+WEIGHT_MAX = 5
+
 def _compute_per_layer_density_2q(primary_layer_view, weighted=False):
     if len(primary_layer_view)==0:
         return 0, 0
     densities = []
     for (i, layer) in enumerate(primary_layer_view):
-        densities.append(len(layer))
+        if weighted:
+            if i <= WEIGHT_MAX:
+                densities.append(len(layer))
+        else:
+            densities.append(len(layer))
     return np.mean(densities), np.std(densities)
 
 def _compute_child_distance_2q(primary_layer_view, weighted=False):
@@ -141,7 +148,11 @@ def _compute_child_distance_2q(primary_layer_view, weighted=False):
                 if q in node_to_parent:
                     home_layer, parent = node_to_parent[q]
                     if parent not in verified_parents:
-                        child_distances.append(num_layers - home_layer)
+                        if weighted:
+                            if num_layers <= WEIGHT_MAX:
+                                child_distances.append(num_layers - home_layer)
+                        else:
+                            child_distances.append(num_layers - home_layer)
                         verified_parents.add(parent)
                 node_to_parent[q] = (num_layers, child)
             has_2q_ops = True
@@ -154,9 +165,9 @@ def _compute_child_distance_2q(primary_layer_view, weighted=False):
 def _compute_size_depth_ratio_2q(primary_layer_view):
     return sum(len(layer) for layer in primary_layer_view) / len(primary_layer_view)
 
-def _compute_in_layer_qubit_distance_2q(primary_layer_view):
+def _compute_in_layer_qubit_distance_2q(primary_layer_view, weighted=False):
     distances = []
-    for layer in primary_layer_view:
+    for (i, layer) in enumerate(primary_layer_view):
         used_qubits_left = []
         used_qubits_right = []
         for node in layer:
@@ -164,11 +175,15 @@ def _compute_in_layer_qubit_distance_2q(primary_layer_view):
             used_qubits_left.append(q0.index)
             used_qubits_right.append(q1.index)
         d = 0
-        for i in range(len(used_qubits_left)):
-            q0, q1 = used_qubits_left[i], used_qubits_right[i]
-            for j in range(i+1, len(used_qubits_left)):
-                r0, r1 = used_qubits_left[j], used_qubits_right[j] 
+        for ii in range(len(used_qubits_left)):
+            q0, q1 = used_qubits_left[ii], used_qubits_right[ii]
+            for jj in range(ii+1, len(used_qubits_left)):
+                r0, r1 = used_qubits_left[jj], used_qubits_right[jj] 
                 d += abs(q0-r0)+abs(q0-r1)+abs(q1-r0)+abs(q1-r1)
-        distances.append(d)
+        if weighted:
+            if i <= WEIGHT_MAX:
+                distances.append(d)
+        else:
+            distances.append(d)
     return np.mean(distances), np.std(distances)
     

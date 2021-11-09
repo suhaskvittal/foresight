@@ -33,7 +33,7 @@ DECAY_RATE = 0.001  # Decay coefficient for penalizing serial swaps.
 DECAY_RESET_INTERVAL = 5  # How often to reset all decay rates to 1.
 
 
-class TestSwap(TransformationPass):
+[docs]class SabreSwap(TransformationPass):
     r"""Map input circuit onto a backend topology via insertion of SWAPs.
 
     Implementation of the SWAP-based heuristic search from the SABRE qubit
@@ -136,7 +136,7 @@ class TestSwap(TransformationPass):
         self.qubits_decay = None
         self._bit_indices = None
 
-    def run(self, dag):
+[docs]    def run(self, dag):
         """Run the SabreSwap pass on `dag`.
 
         Args:

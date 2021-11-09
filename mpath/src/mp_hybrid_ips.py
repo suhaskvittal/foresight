@@ -25,7 +25,7 @@ from collections import deque, defaultdict
 import warnings
 
 class MPATH_HYBRID_IPS(TransformationPass):
-    def __init__(self, coupling_map, regressor, slack=2, solution_cap=32, edge_weights=None):
+    def __init__(self, coupling_map, classifier, slack=2, solution_cap=32, edge_weights=None, hybrid_inaction_period=5):
         super().__init__()
 
         self.slack = slack
@@ -33,8 +33,10 @@ class MPATH_HYBRID_IPS(TransformationPass):
         self.solution_cap = solution_cap
 
         self.distance_matrix, self.paths_on_arch = process_coupling_map(coupling_map, slack, edge_weights=edge_weights) 
+        self.mean_degree = len(self.coupling_map.get_edges()) / self.coupling_map.size()
 
-        self.regressor = regressor
+        self.classifier = classifier
+        self.hybrid_inaction_period = hybrid_inaction_period
 
         self.fake_run = False
         self.router_usage = defaultdict(int)
@@ -60,7 +62,8 @@ class MPATH_HYBRID_IPS(TransformationPass):
             primary_layer_view, 
             secondary_layer_view, 
             [(current_layout, [], 0)], 
-            canonical_register 
+            canonical_register,
+            len(primary_layer_view)
         )
 
         self.router_usage['ips'] = original_layer_size - len(primary_layer_view)
@@ -71,7 +74,7 @@ class MPATH_HYBRID_IPS(TransformationPass):
             min_layout = None
             min_dag = None
             min_router_usage = defaultdict(int)
-            sabre = mp_hybrid_sabreswap.MPATH_HYBRID_SabreSwap(self.coupling_map, self.regressor, heuristic='decay')
+            sabre = mp_hybrid_sabreswap.MPATH_HYBRID_SabreSwap(self.coupling_map, self.classifier, heuristic='decay')
             for (layout, soln, size) in solutions:
                 post_dag = mapped_dag._copy_circuit_metadata()
                 for i in range(len(primary_layer_view)):
@@ -124,7 +127,8 @@ class MPATH_HYBRID_IPS(TransformationPass):
         primary_layer_view, 
         secondary_layer_view, 
         base_solver_queue, 
-        canonical_register 
+        canonical_register,
+        original_primary_layer_view_size
     ):
         if len(primary_layer_view) == 0:
             return base_solver_queue
@@ -141,12 +145,13 @@ class MPATH_HYBRID_IPS(TransformationPass):
         while len(solver_queue) <= 2*self.solution_cap:
             if len(primary_layer_view) == 0:
                 break
-            # Check statistics.
-            X = get_independent_variable(primary_layer_view)
-            y = self.regressor.predict(X)
-            if y[0] > 0:  # Stop using IPS
-                exec_rest = True
-                break
+            if original_primary_layer_view_size - len(primary_layer_view) > self.hybrid_inaction_period:
+                # Check statistics.
+                X = get_independent_variable(primary_layer_view)
+                y = self.classifier.predict(X)
+                if y[0] == 0:  # Stop using IPS
+                    exec_rest = True
+                    break
 
             next_solver_queue = []
             next_leaves = []
@@ -182,20 +187,22 @@ class MPATH_HYBRID_IPS(TransformationPass):
                 min_leaves.append((leaf, layout, leaf.sum_data))
         # Now that we know the best leaves, we simply just need to build the corresponding dags.
         # Traverse up the leaves -- there is only one path to a root.
-        min_leaves = min_leaves[:self.solution_cap]
+        if len(min_leaves) > self.solution_cap:
+            min_leaf_indices = np.random.choice(np.arange(len(min_leaves)), size=self.solution_cap)
+            min_leaves = [min_leaves[i] for i in min_leaf_indices]
         min_solutions = []
         for (leaf, layout, leaf_sum) in min_leaves:
             output_layer_deque = deque([])
             curr = leaf
             while curr != None:
-                output_layer_deque.extendleft(curr.obj_data)
+                output_layer_deque.extendleft(list(curr.obj_data)[::-1])
                 curr = curr.parent
             min_solutions.append((layout, output_layer_deque, leaf_sum))
         # If exec_rest, then we exit deep solve to perform SABRE on all solutions.
         if exec_rest:
             return min_solutions
         else:
-            return self.deep_solve(primary_layer_view, secondary_layer_view, min_solutions, canonical_register)
+            return self.deep_solve(primary_layer_view, secondary_layer_view, min_solutions, canonical_register, original_primary_layer_view_size)
                 
     def shallow_solve(self, primary_layer_view, secondary_layer_view, current_layout, canonical_register):
         output_layers = [[]]
@@ -223,7 +230,7 @@ class MPATH_HYBRID_IPS(TransformationPass):
                     visited.add(q0)
                     visited.add(q1)
                     curr_layer.append(node)
-                if curr_layer:
+                if primary_layer_view[i]:
                     post_primary_layer_view.append(curr_layer)
 
         # Process operations in layer
@@ -315,11 +322,14 @@ class MPATH_HYBRID_IPS(TransformationPass):
             return []
         # Get path candidates from _path_select.
         path_candidates = self.paths_on_arch[(p0, p1)]
-        return [self._path_minfold(path, current_layout, post_primary_layer_view) for path in path_candidates]
-    
+        path_folds = []
+        for path in path_candidates:
+            path_folds.extend(self._path_minfold(path, current_layout, post_primary_layer_view))
+        return path_folds
+
     def _path_minfold(self, path, current_layout, post_primary_layer_view):
         min_dist = -1
-        min_fold = []
+        min_folds = []
         latest_layout = current_layout
         latest_fold = None
         for i in range(len(path)):
@@ -345,11 +355,19 @@ class MPATH_HYBRID_IPS(TransformationPass):
             latest_layout = test_layout
             latest_fold = fold
             # Compute distance to post primary layer.
-            dist = self._distf(post_primary_layer_view, test_layout)
+            dist = self._distf(len(path)-1, post_primary_layer_view, test_layout)
             if dist < min_dist or min_dist == -1:
                 min_dist = dist
-                min_fold = fold
-        return min_fold, np.log10(min_dist + len(path))
+                min_folds = [(
+                    fold, 
+                    dist
+                )]
+            elif dist == min_dist:
+                min_folds.append((
+                    fold, 
+                    dist
+                ))
+        return min_folds
 
     def _remap_gate_for_layout(self, op, layout, canonical_register):
         new_op = copy(op)
@@ -371,19 +389,15 @@ class MPATH_HYBRID_IPS(TransformationPass):
             p0, p1 = test_layout[v0], test_layout[v1]
             if not self.coupling_map.graph.has_edge(p0, p1):
                 return False, 0
-        #print(size, max_allowed_size, [(q0.index, q1.index) for (q0, q1) in target_list])
-        max_allowed_size = max_allowed_size/len(target_list)
-        if size > max_allowed_size:
-            return False, 0
         # If we have gotten to this point, then our soln is good.
         if verify_only:
             dist = 0
         else:
-            dist = self._distf(post_primary_layer_view, test_layout)
+            dist = self._distf(size, post_primary_layer_view, test_layout)
 
-        return True, np.log10(dist + size)
+        return True, dist 
 
-    def _distf(self, post_primary_layer_view, test_layout):
+    def _distf(self, soln_size, post_primary_layer_view, test_layout):
         dist = 0.0
         num_ops = 0
         for r in range(0, len(post_primary_layer_view)):
@@ -393,9 +407,10 @@ class MPATH_HYBRID_IPS(TransformationPass):
                 q0, q1 = node.qargs
                 num_ops += 1
                 sub_sum += self.distance_matrix[test_layout[q0]][test_layout[q1]]
-            dist += sub_sum 
+            dist += sub_sum * np.exp(-(r/((self.mean_degree)**2))**2)
         if num_ops == 0:
             return 0
         else:
-            return dist/num_ops
+            dist = dist/num_ops
+            return dist+soln_size*np.exp(-(num_ops/self.mean_degree)**2)
 

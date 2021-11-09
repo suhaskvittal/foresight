@@ -23,6 +23,7 @@ from mp_util import G_QISKIT_GATE_SET,\
                     G_IBM_TORONTO,\
                     G_GOOGLE_WEBER,\
                     G_RIGETTI_ASPEN9,\
+                    G_IBM_TOKYO,\
                     G_QASMBENCH_MEDIUM,\
                     G_QASMBENCH_LARGE,\
                     G_MPATH_IPS_SLACK,\
@@ -45,17 +46,14 @@ from os.path import isfile, join
 def b_qasmbench(coupling_map, arch_file, hybrid_data_file, dataset='medium', out_file='qasmbench.csv', runs=5):
     basis_pass = Unroller(G_QISKIT_GATE_SET)
 
-    mapping_pass = SabreLayout(coupling_map, routing_pass=SabreSwap(coupling_map, heuristic='decay'))
     data = {}
     if dataset == 'qaoa':
-        compare = ['sabre', 'hybrid']
+        compare = ['sabre', 'ips', 'ssonly']
     else:
-        compare = ['sabre', 'ips', 'hybrid']
-    benchmark_pass = BenchmarkPass(coupling_map, hybrid_data_file, runs=runs, compare=compare)
+        compare = ['sabre', 'ips', 'ssonly']
+    benchmark_pass = BenchmarkPass(coupling_map, hybrid_data_file, runs=runs, compare=compare, compute_stats=False)
     benchmark_pm = PassManager([
         basis_pass, 
-        mapping_pass, 
-        ApplyLayout(), 
         benchmark_pass
     ]) 
     qmap_pass = PassManager([
@@ -85,6 +83,8 @@ def b_qasmbench(coupling_map, arch_file, hybrid_data_file, dataset='medium', out
             bench_name = '%s (%s)' % (family, grid_type)
         else:
             circ = QuantumCircuit.from_qasm_file('benchmarks/qasmbench/%s/%s/%s.qasm' % (dataset, qb_file, qb_file))    
+        if 'hybrid' in compare and circ.depth() > 200:
+            continue
         if circ.depth() > 2000 or circ.depth() < 30:
             continue
         if dataset == 'qaoa':
@@ -156,4 +156,8 @@ if __name__ == '__main__':
         coupling_map = G_RIGETTI_ASPEN9
         arch_file = 'arch/rigetti_aspen9.arch'
         hybrid_data_file = 'profiles/aspen9_profile.csv'
+    elif coupling_style == 'tokyo':
+        coupling_map = G_IBM_TOKYO
+        arch_file = 'arch/ibm_tokyo.arch'
+        hybrid_data_file = ''  # undefined
     b_qasmbench(coupling_map, arch_file, hybrid_data_file, dataset=mode, runs=runs, out_file=file_out)

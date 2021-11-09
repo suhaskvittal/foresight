@@ -3,10 +3,12 @@
     date:   2 November 2021
 """
 
+from qiskit.circuit import QuantumCircuit
 from qiskit.transpiler.passes import *
 from qiskit.transpiler import CouplingMap, PassManager
 
-from mp_exec import _pad_circuit_to_fit
+from mp_exec import _pad_circuit_to_fit, draw
+from mp_ips import MPATH_IPS
 from mp_util import G_QAOA,\
                     G_IBM_TORONTO,\
                     G_RIGETTI_ASPEN9,\
@@ -14,8 +16,23 @@ from mp_util import G_QAOA,\
                     G_QISKIT_GATE_SET
 
 import pandas as pd
+import pickle as pkl
 
 from collections import defaultdict
+
+def figure1_circ(filename):
+    cmap = CouplingMap.from_ring(6)
+    circ = QuantumCircuit.from_qasm_file(filename)
+    sabre = PassManager([TrivialLayout(cmap), ApplyLayout(), SabreSwap(cmap, heuristic='basic')])
+    ips = PassManager([TrivialLayout(cmap), ApplyLayout(), MPATH_IPS(cmap, slack=3, solution_cap=1)])
+    sabre_circ = sabre.run(circ)
+    ips_circ = ips.run(circ)
+    draw(circ)
+    draw(sabre_circ)
+    draw(ips_circ)
+    print(sabre_circ.count_ops())
+    print(ips_circ.count_ops())
+    return circ, sabre_circ, ips_circ
 
 def get_sk_model_trend(): 
     suite = G_QAOA
@@ -68,3 +85,54 @@ def get_sk_model_trend():
         for x in data:
             print('%s: %.3f' % (x, data[x][-1]))
     return data
+
+def get_dataset1(pickle_file):
+    dataset = {
+        'ips config': {
+            'slack': 3,
+            'multipath tree width': 32
+        }
+    }
+
+    for coupling_map in ['toronto', 'aspen9', 'weber']:
+        df = pd.read_excel('data/%s_zulehner.xlsx' % coupling_map)
+        dataset[coupling_map] = {
+            'sabre': {
+                df['Unnamed: 0'][x]: {
+                    'cnots added': df['SABRE CNOTs'][x],
+                    'final depth': df['SABRE Depth'][x],
+                    'execution time': df['SABRE Time'][x]
+                } for x in list(df.index.values) 
+            },
+            'ips': {
+                df['Unnamed: 0'][x]: {
+                    'cnots added': df['MPATH_IPS CNOTs'][x],
+                    'final depth': df['MPATH_IPS Depth'][x],
+                    'execution time': df['MPATH_IPS Time'][x]
+                } for x in list(df.index.values) 
+            },
+            'ips (shallow solve only)': {
+                df['Unnamed: 0'][x]: {
+                    'cnots added': df['MPATH_IPS SSOnly CNOTs'][x],
+                    'final depth': df['MPATH_IPS SSOnly Depth'][x],
+                    'execution time': df['MPATH_IPS SSOnly Time'][x]
+                } for x in list(df.index.values) 
+            },
+            'best of sabre and ips': {
+                df['Unnamed: 0'][x]: {
+                    'cnots added': df['Best CNOTs'][x],
+                    'final depth': df['Best Depth'][x]
+                } for x in list(df.index.values)
+            },
+            'astar': {
+                df['Unnamed: 0'][x]: {
+                    'cnots added': df['A* CNOTs'][x],
+                    'final depth': df['A* Depth'][x],
+                    'execution time': df['A* Time'][x]
+                } for x in list(df.index.values) 
+            }
+        }
+    # pickle dataset
+    with open(pickle_file, 'wb') as writer:
+        pkl.dump(dataset, writer)
+
