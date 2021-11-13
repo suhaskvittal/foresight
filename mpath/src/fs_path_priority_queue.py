@@ -3,7 +3,7 @@
 	date:	20 October 2021
 """
 
-from mp_util import _path_hash_f
+from fs_util import _path_hash_f
 
 class PathPriorityQueue:
 	def __init__(self):

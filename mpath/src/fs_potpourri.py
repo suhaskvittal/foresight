@@ -7,9 +7,9 @@ from qiskit.circuit import QuantumCircuit
 from qiskit.transpiler.passes import *
 from qiskit.transpiler import CouplingMap, PassManager
 
-from mp_exec import _pad_circuit_to_fit, draw
-from mp_ips import MPATH_IPS
-from mp_util import G_QAOA,\
+from fs_exec import _pad_circuit_to_fit, draw
+from fs_ips import ForeSight
+from fs_util import G_QAOA,\
                     G_IBM_TORONTO,\
                     G_RIGETTI_ASPEN9,\
                     G_GOOGLE_WEBER,\
@@ -24,7 +24,7 @@ def figure1_circ(filename):
     cmap = CouplingMap.from_ring(6)
     circ = QuantumCircuit.from_qasm_file(filename)
     sabre = PassManager([TrivialLayout(cmap), ApplyLayout(), SabreSwap(cmap, heuristic='basic')])
-    ips = PassManager([TrivialLayout(cmap), ApplyLayout(), MPATH_IPS(cmap, slack=3, solution_cap=1)])
+    ips = PassManager([TrivialLayout(cmap), ApplyLayout(), ForeSight(cmap, slack=3, solution_cap=1)])
     sabre_circ = sabre.run(circ)
     ips_circ = ips.run(circ)
     draw(circ)
@@ -87,12 +87,7 @@ def get_sk_model_trend():
     return data
 
 def get_dataset1(pickle_file):
-    dataset = {
-        'ips config': {
-            'slack': 3,
-            'multipath tree width': 32
-        }
-    }
+    dataset = {}
 
     for coupling_map in ['toronto', 'aspen9', 'weber', 'tokyo']:
         df = pd.read_excel('data/sabre_initial/%s_zulehner.xlsx' % coupling_map)
@@ -104,18 +99,18 @@ def get_dataset1(pickle_file):
                     'execution time': df['SABRE Time'][x]
                 } for x in list(df.index.values) 
             },
-            'ips': {
+            'foresight': {
                 df['Unnamed: 0'][x]: {
-                    'cnots added': df['MPATH_IPS CNOTs'][x],
-                    'final depth': df['MPATH_IPS Depth'][x],
-                    'execution time': df['MPATH_IPS Time'][x]
+                    'cnots added': df['ForeSight CNOTs'][x],
+                    'final depth': df['ForeSight Depth'][x],
+                    'execution time': df['ForeSight Time'][x]
                 } for x in list(df.index.values) 
             },
-            'ips (shallow solve only)': {
+            'foresight (shallow solve only)': {
                 df['Unnamed: 0'][x]: {
-                    'cnots added': df['MPATH_IPS SSOnly CNOTs'][x],
-                    'final depth': df['MPATH_IPS SSOnly Depth'][x],
-                    'execution time': df['MPATH_IPS SSOnly Time'][x]
+                    'cnots added': df['ForeSight SSOnly CNOTs'][x],
+                    'final depth': df['ForeSight SSOnly Depth'][x],
+                    'execution time': df['ForeSight SSOnly Time'][x]
                 } for x in list(df.index.values) 
             },
             'best of sabre and ips': {

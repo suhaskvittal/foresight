@@ -56,7 +56,16 @@ def _get_path(source, sink, next_array):
 		curr = nxt
 	return path
 
-def _get_all_paths(source, sink, coupling_map, slack, dist_array, next_array, path_memoizer, edge_weights=None):
+def _get_all_paths(
+    source, 
+    sink, 
+    coupling_map, 
+    slack, 
+    dist_array, 
+    next_array, 
+    path_memoizer, 
+    edge_weights=None
+):
 	if (source, sink) in path_memoizer:
 		shortest_path = path_memoizer[(source, sink)]
 	else:

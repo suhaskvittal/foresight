@@ -10,18 +10,17 @@ from qiskit.transpiler.layout import Layout
 from qiskit.dagcircuit import DAGNode
 from qiskit.circuit.library import CXGate, SwapGate, Measure
 
-from mp_layerview import LayerViewPass
-from mp_ips_selector import IPSSelector
-from mp_sum_tree import SumTreeNode
-from mp_dist import process_coupling_map
+from fs_layerview import LayerViewPass
+from fs_selector import ForeSightSelector
+from fs_sum_tree import SumTreeNode
+from fs_dist import process_coupling_map
 
 import numpy as np
 
 from copy import copy, deepcopy
 from collections import deque
 
-# MPATH_IPS ; IPS = Intelligent path selection
-class MPATH_IPS(TransformationPass):
+class ForeSight(TransformationPass):
     def __init__(self, coupling_map, slack=2, solution_cap=32, edge_weights=None, depth_minimize=False):
         super().__init__()
 
@@ -40,11 +39,13 @@ class MPATH_IPS(TransformationPass):
         canonical_register = dag.qregs["q"]
         current_layout = Layout.generate_trivial_layout(canonical_register)
         
-        primary_layer_view, secondary_layer_view = self.property_set['primary_layer_view'], self.property_set['secondary_layer_view']
+        primary_layer_view, secondary_layer_view =\
+            self.property_set['primary_layer_view'], self.property_set['secondary_layer_view']
         if primary_layer_view is None or secondary_layer_view is None:
             layer_view_pass = LayerViewPass();
             layer_view_pass.run(dag)
-            primary_layer_view, secondary_layer_view = layer_view_pass.property_set['primary_layer_view'], layer_view_pass.property_set['secondary_layer_view']
+            primary_layer_view, secondary_layer_view =\
+                layer_view_pass.property_set['primary_layer_view'], layer_view_pass.property_set['secondary_layer_view']
         # Convert to deque's for lower latency
         primary_layer_view = deque(primary_layer_view)
         secondary_layer_view = deque(secondary_layer_view)
@@ -148,7 +149,13 @@ class MPATH_IPS(TransformationPass):
 
         return self.deep_solve(primary_layer_view, secondary_layer_view, min_solutions, canonical_register)
                 
-    def shallow_solve(self, primary_layer_view, secondary_layer_view, current_layout, canonical_register):
+    def shallow_solve(
+        self, 
+        primary_layer_view,
+        secondary_layer_view,
+        current_layout,
+        canonical_register
+    ):
         output_layers = [[]]
         starting_output_layer = 1
         
@@ -194,7 +201,7 @@ class MPATH_IPS(TransformationPass):
         # Build PPC and get candidate list.
         if len(path_collection_list) == 0:
             return [(output_layers, current_layout, 0)] 
-        path_selector = IPSSelector(path_collection_list, len(self.coupling_map.physical_qubits), len(path_collection_list))
+        path_selector = ForeSightSelector(path_collection_list, len(self.coupling_map.physical_qubits), len(path_collection_list))
         candidate_list, suggestions = path_selector.find_and_join(self, target_list, current_layout, post_primary_layer_view)
         if candidate_list is None:  # We failed, take the suggestions.
             tmp_pl_view = deepcopy(primary_layer_view)
@@ -258,7 +265,8 @@ class MPATH_IPS(TransformationPass):
             for op in post_ops:  
                 q0, q1 = op.qargs
                 if not self.coupling_map.graph.has_edge(new_layout[q0], new_layout[q1]):
-                    print('ERROR: not satisified %d(%d), %d(%d)' % (q0.index, current_layout[q0], q1.index, current_layout[q1]))
+                    print('ERROR: not satisified %d(%d), %d(%d)'\
+                        % (q0.index, current_layout[q0], q1.index, current_layout[q1]))
                     print('%d edges:' % current_layout[q0], self.coupling_map.neighbors(current_layout[q0]))
                     print('%d edges:' % current_layout[q1], self.coupling_map.neighbors(current_layout[q1]))
                     print('|TargetSet| = %d' % len(target_list))
@@ -326,7 +334,14 @@ class MPATH_IPS(TransformationPass):
         new_op.qargs = [canonical_register[layout[x]] for x in op.qargs]
         return new_op
 
-    def _verify_and_measure(self, soln, target_list, current_layout, post_primary_layer_view, verify_only=False):
+    def _verify_and_measure(
+        self, 
+        soln,
+        target_list,
+        current_layout,
+        post_primary_layer_view,
+        verify_only=False
+    ):
         if len(target_list) == 0:
             return True, 0
         test_layout = current_layout.copy()

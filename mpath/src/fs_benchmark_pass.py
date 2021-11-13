@@ -13,39 +13,43 @@ from qiskit.transpiler.passes import *
 from timeit import default_timer as timer
 from copy import copy, deepcopy
 
-from mp_layerview import LayerViewPass
-from mp_ips import MPATH_IPS
-from mp_bsp import MPATH_BSP
-from mp_hybrid import MPATH_HYBRID
-from mp_stat import load_classifier
-from mp_exec import _bench_and_cmp, _pad_circuit_to_fit, draw
-from mp_util import _compute_per_layer_density_2q,\
+from fs_layerview import LayerViewPass
+from fs_foresight import ForeSight
+from fs_stat import load_classifier
+from fs_exec import _bench_and_cmp, _pad_circuit_to_fit, draw
+from fs_util import _compute_per_layer_density_2q,\
                     _compute_child_distance_2q,\
                     _compute_size_depth_ratio_2q,\
                     _compute_in_layer_qubit_distance_2q
-from mp_util import G_MPATH_IPS_SLACK, G_MPATH_IPS_SOLN_CAP, G_MPATH_BSP_TREE_WIDTH, G_QISKIT_GATE_SET
+from fs_util import G_FORESIGHT_SLACK, G_FORESIGHT_SOLN_CAP
 
 import numpy as np
 
 from collections import defaultdict
 
 class BenchmarkPass(AnalysisPass):
-    def __init__(self, coupling_map, hybrid_data_file, compare=['sabre', 'ips', 'ssonly', 'hybrid'], runs=5, compute_stats=False):
+    def __init__(
+        self, 
+        coupling_map, 
+        compare=['sabre', 'foresight', 'ssonly'],
+        runs=5,
+        compute_stats=False
+    ):
         super().__init__()
 
         self.benchmark_list = compare
 
-        self.mapping_policy = SabreLayout(coupling_map, routing_pass=SabreSwap(coupling_map, heuristic='decay'), max_iterations=3)
-        #self.mapping_policy = SabreLayout(coupling_map, routing_pass=MPATH_IPS(coupling_map, slack=G_MPATH_IPS_SLACK, solution_cap=2))
+        self.mapping_policy = SabreLayout(coupling_map, 
+            routing_pass=SabreSwap(coupling_map, heuristic='decay'), max_iterations=3)
         self.sabre_router = SabreSwap(coupling_map, heuristic='decay')
-        self.ips_router = MPATH_IPS(
+        self.foresight_router = ForeSight(
                 coupling_map,
-                slack=G_MPATH_IPS_SLACK,
-                solution_cap=G_MPATH_IPS_SOLN_CAP
+                slack=G_FORESIGHT_SLACK,
+                solution_cap=G_FORESIGHT_SOLN_CAP
         )
-        self.ips_ssonly_router = MPATH_IPS(
+        self.foresight_ssonly_router = ForeSight(
                 coupling_map,
-                slack=G_MPATH_IPS_SLACK,
+                slack=G_ForeSight_SLACK,
                 solution_cap=1
         )
         if hybrid_data_file:
@@ -60,12 +64,12 @@ class BenchmarkPass(AnalysisPass):
             self.sabre_router,
             Unroller(G_QISKIT_GATE_SET)
         ])
-        self.ips_pass = PassManager([
-            self.ips_router,
+        self.foresight_pass = PassManager([
+            self.foresight_router,
             Unroller(G_QISKIT_GATE_SET)
         ])
-        self.ips_ssonly_pass = PassManager([
-            self.ips_ssonly_router,
+        self.foresight_ssonly_pass = PassManager([
+            self.foresight_ssonly_router,
             Unroller(G_QISKIT_GATE_SET)
         ])
         self.look_pass = PassManager([
@@ -107,60 +111,29 @@ class BenchmarkPass(AnalysisPass):
                     self.benchmark_results['SABRE Depth'] = (sabre_circ.depth())
                     self.benchmark_results['SABRE Time'] = (end - start)
                 print('\t\t(sabre done.)')
-            # MPATH IPS
-            if 'ips' in self.benchmark_list:
-                print('\t\t(ips start.)')
+            # ForeSight
+            if 'foresight' in self.benchmark_list:
+                print('\t\t(foresight start.)')
                 start = timer()
-                ips_circ = self.ips_pass.run(circ)
+                foresight_circ = self.foresight_pass.run(circ)
                 end = timer()
-                ips_cnots = ips_circ.count_ops()['cx'] - circ_cx
-                sabre_ips_circ = self.sabre_pass.run(ips_circ)
-                if sabre_ips_circ.count_ops()['cx'] != ips_circ.count_ops()['cx']:
-                    print('error: not routed correctly', sabre_ips_circ.count_ops()['cx'], ips_circ.count_ops()['cx'])
-                    exit()
-                if r == 0 or self.benchmark_results['MPATH_IPS CNOTs'] > ips_cnots:
-                    self.benchmark_results['MPATH_IPS CNOTs'] = ips_cnots
-                    self.benchmark_results['MPATH_IPS Depth'] = (ips_circ.depth())
-                    self.benchmark_results['MPATH_IPS Time'] = (end - start)
-                print('\t\t(ips done.)')
+                foresight_cnots = foresight_circ.count_ops()['cx'] - circ_cx
+                if r == 0 or self.benchmark_results['ForeSight CNOTs'] > foresight_cnots:
+                    self.benchmark_results['ForeSight CNOTs'] = foresight_cnots
+                    self.benchmark_results['ForeSight Depth'] = (foresight_circ.depth())
+                    self.benchmark_results['ForeSight Time'] = (end - start)
+                print('\t\t(foresight done.)')
             if 'ssonly' in self.benchmark_list:
                 print('\t\t(ssonly start.)')
                 start = timer()
-                ssonly_circ = self.ips_ssonly_pass.run(circ)
+                ssonly_circ = self.foresight_ssonly_pass.run(circ)
                 end = timer()
                 ssonly_cnots = ssonly_circ.count_ops()['cx'] - circ_cx
-                if r == 0 or self.benchmark_results['MPATH_IPS SSOnly CNOTs'] > ssonly_cnots:
-                    self.benchmark_results['MPATH_IPS SSOnly CNOTs'] = ssonly_cnots
-                    self.benchmark_results['MPATH_IPS SSOnly Depth'] = ssonly_circ.depth()
-                    self.benchmark_results['MPATH_IPS SSOnly Time'] = end - start
+                if r == 0 or self.benchmark_results['ForeSight SSOnly CNOTs'] > ssonly_cnots:
+                    self.benchmark_results['ForeSight SSOnly CNOTs'] = ssonly_cnots
+                    self.benchmark_results['ForeSight SSOnly Depth'] = ssonly_circ.depth()
+                    self.benchmark_results['ForeSight SSOnly Time'] = end - start
                 print('\t\t(ssonly done).')
-            # MPATH BSP
-            if 'bsp' in self.benchmark_list:
-                start = timer()
-                bsp_circ = self.bsp_pass.run(circ)
-                end = timer()
-                bsp_cnots = bsp_circ.count_ops()['cx'] - circ_cx
-                if r == 0 or self.benchmark_results['MPATH_BSP CNOTs'] > bsp_cnots:
-                    self.benchmark_results['MPATH_BSP CNOTs'] = bsp_cnots
-                    self.benchmark_results['MPATH_BSP Depth'] = (bsp_circ.depth())
-                    self.benchmark_results['MPATH_BSP Time'] = (end - start)
-                print('\t\t(bsp done.)')
-            # MPATH HYBRID
-            if 'hybrid' in self.benchmark_list:
-                start = timer()
-                hybrid_circ = self.hybrid_pass.run(circ)
-                end = timer()
-                hybrid_cnots = hybrid_circ.count_ops()['cx'] - circ_cx
-                if r == 0 or self.benchmark_results['MPATH_HYBRID CNOTs'] > hybrid_cnots:
-                    self.benchmark_results['MPATH_HYBRID CNOTs'] = hybrid_cnots
-                    self.benchmark_results['MPATH_HYBRID Depth'] = (hybrid_circ.depth())
-                    self.benchmark_results['MPATH_HYBRID Time'] = (end - start)
-                    
-                    router_usage = self.hybrid_router.router_usage
-                    if router_usage['sabre'] + router_usage['ips'] == 0:
-                        self.benchmark_results['MPATH_HYBRID SABRE Uptime'] = 0
-                    else:
-                        self.benchmark_results['MPATH_HYBRID SABRE Uptime'] = router_usage['sabre'] / (router_usage['sabre'] + router_usage['ips']) 
             # LOOK
             if 'look' in self.benchmark_list:
                 try:

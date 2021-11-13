@@ -15,22 +15,20 @@ from qiskit.exceptions import QiskitError
 from timeit import default_timer as timer
 from copy import copy, deepcopy
 
-from mp_layerview import LayerViewPass
-from mp_ips import MPATH_IPS
-from mp_bsp import MPATH_BSP
-from mp_exec import _bench_and_cmp, _pad_circuit_to_fit, draw
-from mp_util import G_QISKIT_GATE_SET,\
+from fs_layerview import LayerViewPass
+from fs_exec import _bench_and_cmp, _pad_circuit_to_fit, draw
+from fs_util import G_QISKIT_GATE_SET,\
                     G_IBM_TORONTO,\
                     G_GOOGLE_WEBER,\
                     G_RIGETTI_ASPEN9,\
                     G_IBM_TOKYO,\
                     G_QASMBENCH_MEDIUM,\
                     G_QASMBENCH_LARGE,\
-                    G_MPATH_IPS_SLACK,\
-                    G_MPATH_IPS_SOLN_CAP,\
+                    G_FORESIGHT_SLACK,\
+                    G_FORESIGHT_SOLN_CAP,\
                     G_ZULEHNER,\
                     G_QAOA
-from mp_benchmark_pass import BenchmarkPass
+from fs_benchmark_pass import BenchmarkPass
 
 from jkq import qmap
 
@@ -43,7 +41,7 @@ from collections import defaultdict
 from os import listdir
 from os.path import isfile, join
     
-def b_qasmbench(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv', runs=5):
+def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv', runs=5):
     basis_pass = Unroller(G_QISKIT_GATE_SET)
 
     data = {}
@@ -156,4 +154,4 @@ if __name__ == '__main__':
     elif coupling_style == 'tokyo':
         coupling_map = G_IBM_TOKYO
         arch_file = 'arch/ibm_tokyo.arch'
-    b_qasmbench(coupling_map, arch_file, hybrid_data_file, dataset=mode, runs=runs, out_file=file_out)
+    benchmark(coupling_map, arch_file, hybrid_data_file, dataset=mode, runs=runs, out_file=file_out)

@@ -3,13 +3,13 @@
     date:   20 October 2021
 """
 
-from mp_path_priority_queue import PathPriorityQueue
-from mp_path_join_tree import PathJoinTree
-from mp_util import _path_to_swap_collection, _soln_hash_f
+from fs_path_priority_queue import PathPriorityQueue
+from fs_path_join_tree import PathJoinTree
+from fs_util import _path_to_swap_collection, _soln_hash_f
 
 import numpy as np
 
-class IPSSelector:
+class ForeSightSelector:
     def __init__(self, path_collection_list, num_vertices, num_sources):
         self.num_vertices = num_vertices
         self.num_sources = num_sources
@@ -28,7 +28,13 @@ class IPSSelector:
             while pq.size > 0:
                 path, s = pq.dequeue()
                 soln = _path_to_swap_collection(path)
-                valid, _ = verifier._verify_and_measure(soln, target_list, current_layout, post_primary_layer_view, verify_only=True)
+                valid, _ = verifier._verify_and_measure(
+                    soln,
+                    target_list,
+                    current_layout,
+                    post_primary_layer_view,
+                    verify_only=True
+                )
                 if not valid:
                     continue
                 if min_score < 0 or s < min_score:
@@ -41,7 +47,13 @@ class IPSSelector:
             return min_collection_list, None
         
         soln_hash = set()
-        path_join_tree = PathJoinTree([pq.peek()[0] for pq in self.pqueues], verifier, target_list, current_layout, post_primary_layer_view)
+        path_join_tree = PathJoinTree(
+            [pq.peek()[0] for pq in self.pqueues],
+            verifier,
+            target_list,
+            current_layout,
+            post_primary_layer_view
+        )
         for r in range(runs):
             root = path_join_tree.root
             collection = root.data
@@ -49,16 +61,25 @@ class IPSSelector:
             # Modify heaps and path join tree randomly.
             # If invalid, then find leaves contributing to invalid nodes.
             if not is_valid: # Search for invalid nodes.
-                self._dfs_search_invalid_and_update(path_join_tree, verifier, target_list, current_layout, post_primary_layer_view)
+                self._dfs_search_invalid_and_update(
+                    path_join_tree,
+                    verifier,
+                    target_list,
+                    current_layout,
+                    post_primary_layer_view
+                )
                 continue
             # Otherwise, just do random adjustments.
-            self._random_select_and_update(path_join_tree, verifier, target_list, current_layout, post_primary_layer_view)  
+            self._random_select_and_update(
+                path_join_tree, 
+                verifier,
+                target_list,
+                current_layout,
+                post_primary_layer_view
+            )  
             if _soln_hash_f(collection) in soln_hash:
                 continue
             soln_hash.add(_soln_hash_f(collection))
-#           if is_valid and min_score > 0 and score > min_score:
-#               # The cost of searching for a golden goose is too high. Just exit.
-#               break
             if min_score < 0 or score < min_score:
                 min_score = score
                 min_collection_list.append(collection)
@@ -70,7 +91,14 @@ class IPSSelector:
             # Modify all the leaves.
             modified_heaps = list(range(self.num_sources))
             new_paths = [pq.peek()[0] for pq in self.pqueues]
-            path_join_tree.modify_leaves(modified_heaps, new_paths, verifier, target_list, current_layout, post_primary_layer_view)
+            path_join_tree.modify_leaves(
+                modified_heaps,
+                new_paths,
+                verifier,
+                target_list,
+                current_layout,
+                post_primary_layer_view
+            )
             # Use DFS to suggest splits in the target list.
             dfs_stack = [path_join_tree.root]
             suggestions = []
@@ -88,7 +116,14 @@ class IPSSelector:
     def reset(self):
         self.pqueues = [PathPriorityQueue.buildheap(self.path_collection_list[i]) for i in range(self.num_sources)]
     
-    def _random_select_and_update(self, path_join_tree, verifier, target_list, current_layout, post_primary_layer_view):
+    def _random_select_and_update(
+        self,
+        path_join_tree,
+        verifier,
+        target_list,
+        current_layout,
+        post_primary_layer_view
+    ):
         rand_index = np.random.randint(0, high=len(self.reduceable))
         i = self.reduceable[rand_index]
         pq = self.pqueues[i]
@@ -101,7 +136,14 @@ class IPSSelector:
         if len(self.reduceable) == 0:
             self.reduceable = [i for i in range(self.num_sources)]
 
-    def _dfs_search_invalid_and_update(self, path_join_tree, verifier, target_list, current_layout, post_primary_layer_view):
+    def _dfs_search_invalid_and_update(
+        self,
+        path_join_tree,
+        verifier,
+        target_list,
+        current_layout,
+        post_primary_layer_view
+    ):
         dfs_stack = [path_join_tree.root]
 
         modified_heaps = []
@@ -125,5 +167,12 @@ class IPSSelector:
                     dfs_stack.append(right)
         # Modify path join tree.
         if len(modified_heaps) > 0:
-            path_join_tree.modify_leaves(modified_heaps, new_paths, verifier, target_list, current_layout, post_primary_layer_view)
+            path_join_tree.modify_leaves(
+                modified_heaps,
+                new_paths,
+                verifier,
+                target_list,
+                current_layout,
+                post_primary_layer_view
+            )
 

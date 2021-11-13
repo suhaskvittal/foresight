@@ -3,7 +3,7 @@
 	date:	20 October 2021
 """
 
-from mp_util import _path_to_swap_collection, _is_pow2
+from fs_util import _path_to_swap_collection, _is_pow2
 
 from copy import copy
 
@@ -22,7 +22,10 @@ class PathJoinTreeNode:
 
 class PathJoinTree:
 	def __init__(self, leaves, verifier, target_list, current_layout, post_primary_layer_view):	
-		self.leaves = [PathJoinTreeNode(_path_to_swap_collection(path), None, None, None, [i]) for (i, path) in enumerate(leaves)]
+		self.leaves = [
+            PathJoinTreeNode(_path_to_swap_collection(path), None, None, None, [i])\
+            for (i, path) in enumerate(leaves)
+        ]
 		while not _is_pow2(len(self.leaves)):
 			self.leaves.append(PathJoinTreeNode([], None, None, None, []))
 		# Build segmented tree from leaves using BFS-like algorithm.
