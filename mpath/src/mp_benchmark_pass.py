@@ -114,6 +114,10 @@ class BenchmarkPass(AnalysisPass):
                 ips_circ = self.ips_pass.run(circ)
                 end = timer()
                 ips_cnots = ips_circ.count_ops()['cx'] - circ_cx
+                sabre_ips_circ = self.sabre_pass.run(ips_circ)
+                if sabre_ips_circ.count_ops()['cx'] != ips_circ.count_ops()['cx']:
+                    print('error: not routed correctly', sabre_ips_circ.count_ops()['cx'], ips_circ.count_ops()['cx'])
+                    exit()
                 if r == 0 or self.benchmark_results['MPATH_IPS CNOTs'] > ips_cnots:
                     self.benchmark_results['MPATH_IPS CNOTs'] = ips_cnots
                     self.benchmark_results['MPATH_IPS Depth'] = (ips_circ.depth())

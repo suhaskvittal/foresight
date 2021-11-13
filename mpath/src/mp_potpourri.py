@@ -94,8 +94,8 @@ def get_dataset1(pickle_file):
         }
     }
 
-    for coupling_map in ['toronto', 'aspen9', 'weber']:
-        df = pd.read_excel('data/%s_zulehner.xlsx' % coupling_map)
+    for coupling_map in ['toronto', 'aspen9', 'weber', 'tokyo']:
+        df = pd.read_excel('data/sabre_initial/%s_zulehner.xlsx' % coupling_map)
         dataset[coupling_map] = {
             'sabre': {
                 df['Unnamed: 0'][x]: {
