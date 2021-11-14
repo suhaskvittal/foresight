@@ -33,7 +33,8 @@ class BenchmarkPass(AnalysisPass):
         coupling_map, 
         compare=['sabre', 'foresight', 'ssonly'],
         runs=5,
-        compute_stats=False
+        compute_stats=False,
+        **kwargs
     ):
         super().__init__()
 
@@ -52,6 +53,8 @@ class BenchmarkPass(AnalysisPass):
                 slack=G_FORESIGHT_SLACK,
                 solution_cap=1
         )
+        # Parse kwargs
+        self.sim = kwargs['sim']
 
         self.sabre_pass = PassManager([
             self.sabre_router,
@@ -87,7 +90,8 @@ class BenchmarkPass(AnalysisPass):
             # Get initial layout.
             circ = original_circuit.copy()
             circ = self.layout_pass.run(circ)
-            ideal_counts = exec_ideal(circ) 
+            if self.sim:
+                ideal_counts = exec_ideal(circ) 
             # Run dag on both passes. 
             # SABRE
             if 'sabre' in self.benchmark_list:
@@ -105,8 +109,9 @@ class BenchmarkPass(AnalysisPass):
                     self.benchmark_results['SABRE Time'] = (end - start)
                     self.benchmark_results['SABRE Memory'] = sum(stat.size for stat in ss.statistics('traceback'))/1024.0
                     # Get fidelity
-                    sabre_counts = exec_ideal(sabre_circ) 
-                    self.benchmark_results['SABRE TVD'] = total_variation_distance(ideal_counts, sabre_counts)
+                    if self.sim:
+                        sabre_counts = exec_ideal(sabre_circ) 
+                        self.benchmark_results['SABRE TVD'] = total_variation_distance(ideal_counts, sabre_counts)
                 print('\t\t(sabre done.)')
             # ForeSight
             if 'foresight' in self.benchmark_list:
@@ -123,8 +128,9 @@ class BenchmarkPass(AnalysisPass):
                     self.benchmark_results['ForeSight Depth'] = (foresight_circ.depth())
                     self.benchmark_results['ForeSight Time'] = (end - start)
                     self.benchmark_results['ForeSight Memory'] = sum(stat.size for stat in ss.statistics('traceback'))/1024.0
-                    foresight_counts = exec_ideal(foresight_circ)
-                    self.benchmark_results['ForeSight TVD'] = total_variation_distance(ideal_counts, foresight_counts)
+                    if self.sim:
+                        foresight_counts = exec_ideal(foresight_circ)
+                        self.benchmark_results['ForeSight TVD'] = total_variation_distance(ideal_counts, foresight_counts)
                 print('\t\t(foresight done.)')
             if 'ssonly' in self.benchmark_list:
                 print('\t\t(ssonly start.)')
@@ -140,8 +146,9 @@ class BenchmarkPass(AnalysisPass):
                     self.benchmark_results['ForeSight SSOnly Depth'] = ssonly_circ.depth()
                     self.benchmark_results['ForeSight SSOnly Time'] = end - start
                     self.benchmark_results['ForeSight SSOnly Memory'] = sum(stat.size for stat in ss.statistics('traceback'))/1024.0
-                    ssonly_counts = exec_ideal(ssonly_circ)
-                    self.benchmark_results['ForeSight SSOnly TVD'] = total_variation_distance(ideal_counts, ssonly_counts)
+                    if self.sim:
+                        ssonly_counts = exec_ideal(ssonly_circ)
+                        self.benchmark_results['ForeSight SSOnly TVD'] = total_variation_distance(ideal_counts, ssonly_counts)
                 print('\t\t(ssonly done).')
         # Some circuit statistics as well.
         if self.compute_stats:

@@ -32,7 +32,7 @@ from os import listdir
 from os.path import isfile, join
 import tracemalloc
     
-def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv', runs=5):
+def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv', runs=5, **kwargs):
     basis_pass = Unroller(G_QISKIT_GATE_SET)
 
     data = defaultdict(list)
@@ -40,7 +40,7 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
         compare = ['sabre', 'foresight', 'ssonly']
     else:
         compare = ['sabre', 'foresight', 'ssonly']
-    benchmark_pass = BenchmarkPass(coupling_map, runs=runs, compare=compare, compute_stats=False)
+    benchmark_pass = BenchmarkPass(coupling_map, runs=runs, compare=compare, compute_stats=False, **kwargs)
     benchmark_pm = PassManager([
         basis_pass, 
         benchmark_pass
@@ -80,6 +80,7 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
         _pad_circuit_to_fit(circ, coupling_map)
         circ = filter_pass.run(circ)
 
+        benchmark_results = None
         try:
             benchmark_pm.run(circ)
             benchmark_results = benchmark_pass.benchmark_results    
@@ -108,13 +109,16 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
         except (QiskitError, KeyError) as error:
             print('\t\t\t(A* failure)')
             
-        if benchmark_results['SABRE CNOTs'] == -1:
-            print('\tN/A')
-        else:
+        if benchmark_results:
+            if benchmark_results['SABRE CNOTs'] == -1:
+                print('\tN/A')
+            else:
+                for x in benchmark_results:
+                    print('\t%s: %.3f' % (x, benchmark_results[x]))
             for x in benchmark_results:
-                print('\t%s: %.3f' % (x, benchmark_results[x]))
-        for x in benchmark_results:
-            data[x].append(benchmark_results[x])
+                data[x].append(benchmark_results[x])
+        else:
+            print('\tN/A')
     df = pd.DataFrame(data=data, index=used_benchmarks)
     df.to_csv(out_file)
     
@@ -124,6 +128,13 @@ if __name__ == '__main__':
     coupling_style = argv[2]
     runs = int(argv[3])
     file_out = argv[4]
+    
+    benchmark_kwargs = {
+        'sim': True
+    }
+    if len(argv) > 5:
+        if '--nosim' in argv:
+            benchmark_kwargs['sim'] = False
 
     print('Config:\n\tmode: %s\n\tcoupling style: %s\n\truns: %d'
             % (mode, coupling_style, runs))
@@ -140,4 +151,7 @@ if __name__ == '__main__':
     elif coupling_style == 'tokyo':
         coupling_map = G_IBM_TOKYO
         arch_file = 'arch/ibm_tokyo.arch'
-    benchmark(coupling_map, arch_file, dataset=mode, runs=runs, out_file=file_out)
+    elif coupling_style == '100grid':
+        coupling_map = G_100GRID
+        arch_file = 'arch/100grid.arch'
+    benchmark(coupling_map, arch_file, dataset=mode, runs=runs, out_file=file_out, **benchmark_kwargs)

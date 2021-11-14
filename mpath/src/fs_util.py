@@ -37,6 +37,7 @@ G_IBM_TORONTO = _read_arch_file('arch/ibm_toronto.arch')
 G_GOOGLE_WEBER = _read_arch_file('arch/google_weber.arch')
 G_RIGETTI_ASPEN9 = _read_arch_file('arch/rigetti_aspen9.arch')
 G_IBM_TOKYO = _read_arch_file('arch/ibm_tokyo.arch')
+G_100GRID = _read_arch_file('arch/100grid.arch')
 
 # GATE SETS
 G_QISKIT_GATE_SET = ['u1', 'u2', 'u3', 'cx']
