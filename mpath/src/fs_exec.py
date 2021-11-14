@@ -15,7 +15,8 @@ import numpy as np
 from timeit import default_timer as timer
 from sys import argv
 
-BACKEND = Aer.get_backend('qasm_simulator')
+IDEAL_SIMULATOR = Aer.get_backend('qasm_simulator')
+DEFAULT_SHOTS = 8192
 
 def draw(circ):
     print(circ.draw(output='text'))
@@ -23,6 +24,31 @@ def draw(circ):
 def _pad_circuit_to_fit(circ, coupling_map):
     while circ.num_qubits < coupling_map.size():
         circ.add_bits([Qubit()])
+
+def exec_ideal(circ, shots=DEFAULT_SHOTS):
+    if 'measure' not in circ.count_ops():
+        circ.measure_active()
+    job = IDEAL_SIMULATOR.run(circ, shots=shots)
+    return job.result().get_counts(circ)
+    
+def total_variation_distance(counts1, counts2, shots=DEFAULT_SHOTS):
+    calculated_set = set() 
+    tvd = 0.0
+    for x in counts1:
+        calculated_set.add(x)
+        if x not in counts2:
+            tvd += np.abs(counts1[x])
+        else:
+            tvd += np.abs(counts1[x] - counts2[x])
+    for x in counts2:
+        if x in calculated_set:
+            continue 
+        if x not in counts1:
+            tvd += np.abs(counts2[x])
+        else:
+            tvd += np.abs(counts1[x] - counts2[x])
+    return tvd / shots
+        
     
 if __name__ == '__main__':
     circ_file = argv[1]

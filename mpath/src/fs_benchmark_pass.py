@@ -15,17 +15,17 @@ from copy import copy, deepcopy
 
 from fs_layerview import LayerViewPass
 from fs_foresight import ForeSight
-from fs_stat import load_classifier
-from fs_exec import _bench_and_cmp, _pad_circuit_to_fit, draw
+from fs_exec import exec_ideal, total_variation_distance
 from fs_util import _compute_per_layer_density_2q,\
                     _compute_child_distance_2q,\
                     _compute_size_depth_ratio_2q,\
                     _compute_in_layer_qubit_distance_2q
-from fs_util import G_FORESIGHT_SLACK, G_FORESIGHT_SOLN_CAP
+from fs_util import *
 
 import numpy as np
 
 from collections import defaultdict
+import tracemalloc
 
 class BenchmarkPass(AnalysisPass):
     def __init__(
@@ -49,16 +49,9 @@ class BenchmarkPass(AnalysisPass):
         )
         self.foresight_ssonly_router = ForeSight(
                 coupling_map,
-                slack=G_ForeSight_SLACK,
+                slack=G_FORESIGHT_SLACK,
                 solution_cap=1
         )
-        if hybrid_data_file:
-            # Declare hybrid routers.
-            self.hybrid_router = MPATH_HYBRID(coupling_map, hybrid_data_file)  
-            self.hybrid_pass = PassManager([
-                self.hybrid_router,
-                Unroller(G_QISKIT_GATE_SET)
-            ])
 
         self.sabre_pass = PassManager([
             self.sabre_router,
@@ -70,10 +63,6 @@ class BenchmarkPass(AnalysisPass):
         ])
         self.foresight_ssonly_pass = PassManager([
             self.foresight_ssonly_router,
-            Unroller(G_QISKIT_GATE_SET)
-        ])
-        self.look_pass = PassManager([
-            LookaheadSwap(coupling_map, search_depth=4, search_width=4),
             Unroller(G_QISKIT_GATE_SET)
         ])
         # Layout pass
@@ -98,61 +87,68 @@ class BenchmarkPass(AnalysisPass):
             # Get initial layout.
             circ = original_circuit.copy()
             circ = self.layout_pass.run(circ)
+            ideal_counts = exec_ideal(circ) 
             # Run dag on both passes. 
             # SABRE
             if 'sabre' in self.benchmark_list:
                 print('\t\t(sabre start.)')
                 start = timer()
+                tracemalloc.start(25)
                 sabre_circ = self.sabre_pass.run(circ)
+                ss = tracemalloc.take_snapshot()
                 end = timer()
-                sabre_cnots = sabre_circ.count_ops()['cx'] - circ_cx
+                tracemalloc.stop()
+                sabre_cnots = sabre_circ.count_ops()['cx']
                 if r == 0 or self.benchmark_results['SABRE CNOTs'] > sabre_cnots:
                     self.benchmark_results['SABRE CNOTs'] = sabre_cnots
                     self.benchmark_results['SABRE Depth'] = (sabre_circ.depth())
                     self.benchmark_results['SABRE Time'] = (end - start)
+                    self.benchmark_results['SABRE Memory'] = sum(stat.size for stat in ss.statistics('traceback'))/1024.0
+                    # Get fidelity
+                    sabre_counts = exec_ideal(sabre_circ) 
+                    self.benchmark_results['SABRE TVD'] = total_variation_distance(ideal_counts, sabre_counts)
                 print('\t\t(sabre done.)')
             # ForeSight
             if 'foresight' in self.benchmark_list:
                 print('\t\t(foresight start.)')
                 start = timer()
+                tracemalloc.start(25)
                 foresight_circ = self.foresight_pass.run(circ)
+                ss = tracemalloc.take_snapshot()
                 end = timer()
-                foresight_cnots = foresight_circ.count_ops()['cx'] - circ_cx
+                tracemalloc.stop()
+                foresight_cnots = foresight_circ.count_ops()['cx']
                 if r == 0 or self.benchmark_results['ForeSight CNOTs'] > foresight_cnots:
                     self.benchmark_results['ForeSight CNOTs'] = foresight_cnots
                     self.benchmark_results['ForeSight Depth'] = (foresight_circ.depth())
                     self.benchmark_results['ForeSight Time'] = (end - start)
+                    self.benchmark_results['ForeSight Memory'] = sum(stat.size for stat in ss.statistics('traceback'))/1024.0
+                    foresight_counts = exec_ideal(foresight_circ)
+                    self.benchmark_results['ForeSight TVD'] = total_variation_distance(ideal_counts, foresight_counts)
                 print('\t\t(foresight done.)')
             if 'ssonly' in self.benchmark_list:
                 print('\t\t(ssonly start.)')
                 start = timer()
+                tracemalloc.start(25)
                 ssonly_circ = self.foresight_ssonly_pass.run(circ)
+                ss = tracemalloc.take_snapshot()
                 end = timer()
-                ssonly_cnots = ssonly_circ.count_ops()['cx'] - circ_cx
+                tracemalloc.stop()
+                ssonly_cnots = ssonly_circ.count_ops()['cx']
                 if r == 0 or self.benchmark_results['ForeSight SSOnly CNOTs'] > ssonly_cnots:
                     self.benchmark_results['ForeSight SSOnly CNOTs'] = ssonly_cnots
                     self.benchmark_results['ForeSight SSOnly Depth'] = ssonly_circ.depth()
                     self.benchmark_results['ForeSight SSOnly Time'] = end - start
+                    self.benchmark_results['ForeSight SSOnly Memory'] = sum(stat.size for stat in ss.statistics('traceback'))/1024.0
+                    ssonly_counts = exec_ideal(ssonly_circ)
+                    self.benchmark_results['ForeSight SSOnly TVD'] = total_variation_distance(ideal_counts, ssonly_counts)
                 print('\t\t(ssonly done).')
-            # LOOK
-            if 'look' in self.benchmark_list:
-                try:
-                    start = timer()
-                    look_circ = self.look_pass.run(circ)
-                    end = timer()
-                    if self.benchmark_results['LOOK CNOTs'] >= 0:
-                        self.benchmark_results['LOOK CNOTs'] += (look_circ.count_ops()['cx'] - circ_cx)
-                        self.benchmark_results['LOOK Depth'] += (look_circ.depth())
-                        self.benchmark_results['LOOK Time'] += (end - start)
-                except TranspilerError:
-                    self.benchmark_results['LOOK CNOTs'] = -1.0
-                    self.benchmark_results['LOOK Depth'] = -1.0
-                    self.benchmark_results['LOOK Time'] = -1.0
         # Some circuit statistics as well.
-        layer_view_pass = LayerViewPass()
-        layer_view_pass.run(dag)
-        primary_layer_view = layer_view_pass.property_set['primary_layer_view']
         if self.compute_stats:
+            layer_view_pass = LayerViewPass()
+            layer_view_pass.run(dag)
+            primary_layer_view = layer_view_pass.property_set['primary_layer_view']
+            # Compute stats
             self.benchmark_results['Layer Density, mean'], self.benchmark_results['Layer Density, std.'] =\
                 _compute_per_layer_density_2q(primary_layer_view)
             self.benchmark_results['Child Distance, mean'], self.benchmark_results['Child Distance, std.'] =\

@@ -1,0 +1,26 @@
+#PBS -N ideal_sim
+#PBS -A GT-mqureshi4
+#PBS -l nodes=4:ppn=4
+#PBS -l pmem=16gb
+#PBS -l walltime=720:00
+#PBS -j oe
+#PBS -o ideal_sim.log
+#PBS -q inferno
+#PBS -m abe
+#PBS -M suhaskvittal@gatech.edu
+
+cd $PBS_O_WORKDIR
+source bin/activate
+subdir=`date +%s`
+mkdir -p ideal_sim_results/$subdir
+
+for workload in "zulehner" "qaoa3rl" "qaoask" "medium" "large" 
+do
+    odir=ideal_sim_results/$subdir/$workload
+    mkdir -p $odir
+    for cmap in "aspen9" "weber" "tokyo" 
+    do
+        python3 fs_benchmark.py $workload $cmap 5 $odir/$cmap.csv
+    done
+done
+

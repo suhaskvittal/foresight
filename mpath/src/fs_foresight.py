@@ -77,6 +77,14 @@ class ForeSight(TransformationPass):
         for layer in min_solution:
             for node in layer:
                 mapped_dag.apply_operation_back(op=node.op, qargs=node.qargs, cargs=node.cargs)
+        # validate mapped dag (SWAPs already validated -- ops are valid, just check if all ops are there)
+        orig_ops = dag.count_ops()
+        mapped_ops = mapped_dag.count_ops()
+        for g in orig_ops:
+            if orig_ops[g] != mapped_ops[g]:
+                print('Error! Unequal non-SWAP gates after routing.')
+                print('Original circuit: ', orig_ops)
+                print('Mapped circuit: ', mapped_ops)
         return mapped_dag
     
     def deep_solve(

@@ -11,17 +11,11 @@ import pickle as pkl
 from os import listdir
 from os.path import isfile, join
 
-# DATA COLLECTION FUNCTIONS
-def _sk_benchmarks():
-    sk_file = 'SK.pkl'
-    export_data = None
-    with open(sk_file, 'rb') as reader:
-        export_data = pkl.load(reader)
-    circs = []
-    for family in export_data:
-        for grid_search_type in ['grid_search_60_60']:
-            circs.append((family, grid_search_type, export_data[family][grid_search_type]['opt_circ'])) 
-    return circs
+def _get_qasm_files(folder):
+    return folder, [
+        f for f in listdir(folder)\
+        if isfile(join(folder, f)) and f.endswith('.qasm')
+    ]
 
 def _read_arch_file(arch_file):
     reader = open(arch_file, 'r')
@@ -78,14 +72,14 @@ G_QASMBENCH_LARGE = [
     'square_root_n18',  # square root   
     'cc_n18'            # counterfeit coin
 ]
-G_ZULEHNER = [f for f in listdir('benchmarks/zulehner') if isfile(join('benchmarks/zulehner', f)) and f.endswith('.qasm')]
-
-G_QAOA = _sk_benchmarks()
+G_ZULEHNER = _get_qasm_files('benchmarks/zulehner')
+G_QAOA_SK = _get_qasm_files('benchmarks/qaoa_sk')
+G_QAOA_3RL = _get_qasm_files('benchmarks/qaoa_3r_large')
+G_QAOA_3RVL = _get_qasm_files('benchmarks/qaoa_3r_vlarge')
 
 # ALGORITHM PARAMETERS
-G_MPATH_IPS_SOLN_CAP = 32
-G_MPATH_IPS_SLACK = 3
-G_MPATH_BSP_TREE_WIDTH = 32
+G_FORESIGHT_SOLN_CAP = 32
+G_FORESIGHT_SLACK = 3
 
 def _soln_hash_f(soln):
     h = 0

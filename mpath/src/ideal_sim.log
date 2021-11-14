@@ -1,0 +1,88 @@
+---------------------------------------
+Begin PBS Prologue Sun Nov 14 01:36:36 EST 2021
+Job ID:     3528058.sched-torque.pace.gatech.edu
+User ID:    svittal8
+Job name:   ideal_sim
+Queue:      inferno
+End PBS Prologue Sun Nov 14 01:36:36 EST 2021
+---------------------------------------
+Traceback (most recent call last):
+  File "fs_benchmark.py", line 6, in <module>
+    from qiskit.circuit import QuantumCircuit, Qubit
+ModuleNotFoundError: No module named 'qiskit.circuit'
+Traceback (most recent call last):
+  File "fs_benchmark.py", line 6, in <module>
+    from qiskit.circuit import QuantumCircuit, Qubit
+ModuleNotFoundError: No module named 'qiskit.circuit'
+Traceback (most recent call last):
+  File "fs_benchmark.py", line 6, in <module>
+    from qiskit.circuit import QuantumCircuit, Qubit
+ModuleNotFoundError: No module named 'qiskit.circuit'
+Traceback (most recent call last):
+  File "fs_benchmark.py", line 6, in <module>
+    from qiskit.circuit import QuantumCircuit, Qubit
+ModuleNotFoundError: No module named 'qiskit.circuit'
+Traceback (most recent call last):
+  File "fs_benchmark.py", line 6, in <module>
+    from qiskit.circuit import QuantumCircuit, Qubit
+ModuleNotFoundError: No module named 'qiskit.circuit'
+Traceback (most recent call last):
+  File "fs_benchmark.py", line 6, in <module>
+    from qiskit.circuit import QuantumCircuit, Qubit
+ModuleNotFoundError: No module named 'qiskit.circuit'
+Traceback (most recent call last):
+  File "fs_benchmark.py", line 6, in <module>
+    from qiskit.circuit import QuantumCircuit, Qubit
+ModuleNotFoundError: No module named 'qiskit.circuit'
+Traceback (most recent call last):
+  File "fs_benchmark.py", line 6, in <module>
+    from qiskit.circuit import QuantumCircuit, Qubit
+ModuleNotFoundError: No module named 'qiskit.circuit'
+Traceback (most recent call last):
+  File "fs_benchmark.py", line 6, in <module>
+    from qiskit.circuit import QuantumCircuit, Qubit
+ModuleNotFoundError: No module named 'qiskit.circuit'
+Traceback (most recent call last):
+  File "fs_benchmark.py", line 6, in <module>
+    from qiskit.circuit import QuantumCircuit, Qubit
+ModuleNotFoundError: No module named 'qiskit.circuit'
+Traceback (most recent call last):
+  File "fs_benchmark.py", line 6, in <module>
+    from qiskit.circuit import QuantumCircuit, Qubit
+ModuleNotFoundError: No module named 'qiskit.circuit'
+Traceback (most recent call last):
+  File "fs_benchmark.py", line 6, in <module>
+    from qiskit.circuit import QuantumCircuit, Qubit
+ModuleNotFoundError: No module named 'qiskit.circuit'
+Traceback (most recent call last):
+  File "fs_benchmark.py", line 6, in <module>
+    from qiskit.circuit import QuantumCircuit, Qubit
+ModuleNotFoundError: No module named 'qiskit.circuit'
+Traceback (most recent call last):
+  File "fs_benchmark.py", line 6, in <module>
+    from qiskit.circuit import QuantumCircuit, Qubit
+ModuleNotFoundError: No module named 'qiskit.circuit'
+Traceback (most recent call last):
+  File "fs_benchmark.py", line 6, in <module>
+    from qiskit.circuit import QuantumCircuit, Qubit
+ModuleNotFoundError: No module named 'qiskit.circuit'
+---------------------------------------
+Begin PBS Epilogue Sun Nov 14 01:36:37 EST 2021
+Job ID:     3528058.sched-torque.pace.gatech.edu
+User ID:    svittal8
+Job name:   ideal_sim
+Resources:  nodes=4:ppn=4,pmem=16gb,walltime=12:00:00,neednodes=4:ppn=4
+Rsrc Used:  cput=00:00:00,vmem=0kb,walltime=00:00:01,mem=0kb,energy_used=0
+Queue:      inferno
+Nodes:     
+atl1-1-02-002-5-l.pace.gatech.edu
+End PBS Epilogue Sun Nov 14 01:36:37 EST 2021
+---------------------------------------
+---------------------------------------
+Begin PBS Prologue Sun Nov 14 01:39:18 EST 2021
+Job ID:     3528066.sched-torque.pace.gatech.edu
+User ID:    svittal8
+Job name:   ideal_sim
+Queue:      inferno
+End PBS Prologue Sun Nov 14 01:39:18 EST 2021
+---------------------------------------

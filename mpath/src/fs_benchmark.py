@@ -16,18 +16,8 @@ from timeit import default_timer as timer
 from copy import copy, deepcopy
 
 from fs_layerview import LayerViewPass
-from fs_exec import _bench_and_cmp, _pad_circuit_to_fit, draw
-from fs_util import G_QISKIT_GATE_SET,\
-                    G_IBM_TORONTO,\
-                    G_GOOGLE_WEBER,\
-                    G_RIGETTI_ASPEN9,\
-                    G_IBM_TOKYO,\
-                    G_QASMBENCH_MEDIUM,\
-                    G_QASMBENCH_LARGE,\
-                    G_FORESIGHT_SLACK,\
-                    G_FORESIGHT_SOLN_CAP,\
-                    G_ZULEHNER,\
-                    G_QAOA
+from fs_exec import _pad_circuit_to_fit, draw
+from fs_util import *
 from fs_benchmark_pass import BenchmarkPass
 
 from jkq import qmap
@@ -40,16 +30,17 @@ from sys import argv
 from collections import defaultdict
 from os import listdir
 from os.path import isfile, join
+import tracemalloc
     
 def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv', runs=5):
     basis_pass = Unroller(G_QISKIT_GATE_SET)
 
-    data = {}
+    data = defaultdict(list)
     if dataset == 'qaoa':
-        compare = ['sabre', 'ips', 'ssonly']
+        compare = ['sabre', 'foresight', 'ssonly']
     else:
-        compare = ['sabre', 'ips', 'ssonly']
-    benchmark_pass = BenchmarkPass(coupling_map, hybrid_data_file, runs=runs, compare=compare, compute_stats=False)
+        compare = ['sabre', 'foresight', 'ssonly']
+    benchmark_pass = BenchmarkPass(coupling_map, runs=runs, compare=compare, compute_stats=False)
     benchmark_pm = PassManager([
         basis_pass, 
         benchmark_pass
@@ -64,71 +55,66 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
     ])
 
     if dataset == 'zulehner':
-        benchmark_suite = G_ZULEHNER
+        benchmark_folder, benchmark_suite = G_ZULEHNER
     elif dataset == 'medium':
         benchmark_suite = G_QASMBENCH_MEDIUM
     elif dataset == 'large':
         benchmark_suite = G_QASMBENCH_LARGE
-    elif dataset == 'qaoa':
-        benchmark_suite = G_QAOA
+    elif dataset == 'qaoask':
+        benchmark_folder, benchmark_suite = G_QAOA_SK
+    elif dataset == 'qaoa3rl':
+        benchmark_folder, benchmark_suite = G_QAOA_3RL
+    elif dataset == 'qaoa3rvl':
+        benchmark_folder, benchmark_suite = G_QAOA_3RVL
 
     used_benchmarks = []
     for qb_file in benchmark_suite:
-        if dataset == 'zulehner':
-            circ = QuantumCircuit.from_qasm_file('benchmarks/zulehner/%s' % qb_file)
-        elif dataset == 'qaoa':
-            family, grid_type, circ = qb_file
-            bench_name = '%s (%s)' % (family, grid_type)
-        else:
+        if dataset == 'medium' or dataset == 'large':
             circ = QuantumCircuit.from_qasm_file('benchmarks/qasmbench/%s/%s/%s.qasm' % (dataset, qb_file, qb_file))    
-        if 'hybrid' in compare and circ.depth() > 200:
-            continue
-        if circ.depth() > 2000 or circ.depth() < 30:
-            continue
-        if dataset == 'qaoa':
-            used_benchmarks.append(bench_name)
-            print('[%s]' % bench_name)
         else:
-            used_benchmarks.append(qb_file)
-            print('[%s]' % qb_file)
+            circ = QuantumCircuit.from_qasm_file('%s/%s' % (benchmark_folder, qb_file))
+        if circ.depth() > 3000:
+            continue
+        used_benchmarks.append(qb_file)
+        print('[%s]' % qb_file)
         _pad_circuit_to_fit(circ, coupling_map)
         circ = filter_pass.run(circ)
-        circ.remove_final_measurements()
 
         try:
             benchmark_pm.run(circ)
             benchmark_results = benchmark_pass.benchmark_results    
+            circ.remove_final_measurements()
 
             # Collect results from A* search
-            if dataset == 'zulehner' or dataset == 'qaoa':
-                qmap_start = timer()
-                qmap_res = qmap.compile(
-                    circ,
-                    arch=arch_file,
-                    method=qmap.Method.heuristic
-                )
-                qmap_end = timer()
-                # Benchmark A* search
-                qmap_circ = QuantumCircuit.from_qasm_str(qmap_res['mapped_circuit']['qasm'])
-                qmap_circ.global_phase = circ.global_phase
-                qmap_circ = qmap_pass.run(qmap_circ)  # Compile gates to basis gates.
-                benchmark_results['A* CNOTs'] = 3*qmap_res['mapped_circuit']['swaps']
-                benchmark_results['A* Depth'] = qmap_circ.depth()
-                benchmark_results['A* Time'] = qmap_end - qmap_start
+            qmap_start = timer()
+            tracemalloc.start(25)
+            qmap_res = qmap.compile(
+                circ,
+                arch=arch_file,
+                method=qmap.Method.heuristic
+                #method=qmap.Method.exact
+            )
+            ss = tracemalloc.take_snapshot()
+            qmap_end = timer()
+            tracemalloc.stop()
+            # Benchmark A* search
+            qmap_circ = QuantumCircuit.from_qasm_str(qmap_res['mapped_circuit']['qasm'])
+            qmap_circ.global_phase = circ.global_phase
+            qmap_circ = qmap_pass.run(qmap_circ)  # Compile gates to basis gates.
+            benchmark_results['A* CNOTs'] = qmap_circ.count_ops()['cx']
+            benchmark_results['A* Depth'] = qmap_circ.depth()
+            benchmark_results['A* Time'] = qmap_end - qmap_start
+            benchmark_results['A* Memory'] = sum(stat.size for stat in ss.statistics('traceback'))/1024.0
+        except (QiskitError, KeyError) as error:
+            print('\t\t\t(A* failure)')
             
-            if benchmark_results['SABRE CNOTs'] == -1:
-                print('\tN/A')
-            else:
-                for x in benchmark_results:
-                    print('\t%s: %.3f' % (x, benchmark_results[x]))
+        if benchmark_results['SABRE CNOTs'] == -1:
+            print('\tN/A')
+        else:
             for x in benchmark_results:
-                if x not in data:
-                    data[x] = []
-                data[x].append(benchmark_results[x])
-        except QiskitError as error:
-            print(error)
-            used_benchmarks.pop()
-            continue
+                print('\t%s: %.3f' % (x, benchmark_results[x]))
+        for x in benchmark_results:
+            data[x].append(benchmark_results[x])
     df = pd.DataFrame(data=data, index=used_benchmarks)
     df.to_csv(out_file)
     
@@ -154,4 +140,4 @@ if __name__ == '__main__':
     elif coupling_style == 'tokyo':
         coupling_map = G_IBM_TOKYO
         arch_file = 'arch/ibm_tokyo.arch'
-    benchmark(coupling_map, arch_file, hybrid_data_file, dataset=mode, runs=runs, out_file=file_out)
+    benchmark(coupling_map, arch_file, dataset=mode, runs=runs, out_file=file_out)
