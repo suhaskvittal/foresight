@@ -37,7 +37,7 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
 
     data = defaultdict(list)
     if 'vl' in dataset:
-        compare = ['sabre', 'foresight']
+        compare = ['sabre', 'foresight', 'ssonly']
     else:
         compare = ['sabre', 'foresight', 'ssonly']
     benchmark_pass = BenchmarkPass(coupling_map, runs=runs, compare=compare, compute_stats=False, **kwargs)
