@@ -36,8 +36,8 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
     basis_pass = Unroller(G_QISKIT_GATE_SET)
 
     data = defaultdict(list)
-    if dataset == 'qaoa':
-        compare = ['sabre', 'foresight', 'ssonly']
+    if 'vl' in dataset:
+        compare = ['sabre', 'foresight']
     else:
         compare = ['sabre', 'foresight', 'ssonly']
     benchmark_pass = BenchmarkPass(coupling_map, runs=runs, compare=compare, compute_stats=False, **kwargs)
