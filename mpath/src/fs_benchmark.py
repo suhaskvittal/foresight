@@ -75,7 +75,7 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
             circ = QuantumCircuit.from_qasm_file('benchmarks/qasmbench/%s/%s/%s.qasm' % (dataset, qb_file, qb_file))    
         else:
             circ = QuantumCircuit.from_qasm_file('%s/%s' % (benchmark_folder, qb_file))
-        if circ.depth() > 3000:
+        if circ.depth() > 3000 or circ.depth() < 30:
             continue
         used_benchmarks.append(qb_file)
         print('[%s]' % qb_file)
