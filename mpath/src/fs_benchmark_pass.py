@@ -38,24 +38,25 @@ class BenchmarkPass(AnalysisPass):
     ):
         super().__init__()
 
+        self.sim = kwargs['sim']
+        # Set up routers
         self.benchmark_list = compare
-
         self.mapping_policy = SabreLayout(coupling_map, 
             routing_pass=SabreSwap(coupling_map, heuristic='decay'), max_iterations=3)
         self.sabre_router = SabreSwap(coupling_map, heuristic='decay')
         self.foresight_router = ForeSight(
                 coupling_map,
                 slack=G_FORESIGHT_SLACK,
-                solution_cap=G_FORESIGHT_SOLN_CAP
+                solution_cap=G_FORESIGHT_SOLN_CAP,
+                debug=kwargs['debug']
         )
         self.foresight_ssonly_router = ForeSight(
                 coupling_map,
                 slack=G_FORESIGHT_SLACK,
-                solution_cap=1
+                solution_cap=1,
+                debug=kwargs['debug']
         )
-        # Parse kwargs
-        self.sim = kwargs['sim']
-
+        # Set up passes
         self.sabre_pass = PassManager([
             self.sabre_router,
             Unroller(G_QISKIT_GATE_SET)

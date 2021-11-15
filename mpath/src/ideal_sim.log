@@ -1,88 +1,1284 @@
 ---------------------------------------
-Begin PBS Prologue Sun Nov 14 01:36:36 EST 2021
-Job ID:     3528058.sched-torque.pace.gatech.edu
+Begin PBS Prologue Sun Nov 14 18:56:46 EST 2021
+Job ID:     3529639.sched-torque.pace.gatech.edu
 User ID:    svittal8
-Job name:   ideal_sim
+Job name:   run_ideal.pbs
 Queue:      inferno
-End PBS Prologue Sun Nov 14 01:36:36 EST 2021
+End PBS Prologue Sun Nov 14 18:56:46 EST 2021
 ---------------------------------------
-Traceback (most recent call last):
-  File "fs_benchmark.py", line 6, in <module>
-    from qiskit.circuit import QuantumCircuit, Qubit
-ModuleNotFoundError: No module named 'qiskit.circuit'
-Traceback (most recent call last):
-  File "fs_benchmark.py", line 6, in <module>
-    from qiskit.circuit import QuantumCircuit, Qubit
-ModuleNotFoundError: No module named 'qiskit.circuit'
-Traceback (most recent call last):
-  File "fs_benchmark.py", line 6, in <module>
-    from qiskit.circuit import QuantumCircuit, Qubit
-ModuleNotFoundError: No module named 'qiskit.circuit'
-Traceback (most recent call last):
-  File "fs_benchmark.py", line 6, in <module>
-    from qiskit.circuit import QuantumCircuit, Qubit
-ModuleNotFoundError: No module named 'qiskit.circuit'
-Traceback (most recent call last):
-  File "fs_benchmark.py", line 6, in <module>
-    from qiskit.circuit import QuantumCircuit, Qubit
-ModuleNotFoundError: No module named 'qiskit.circuit'
-Traceback (most recent call last):
-  File "fs_benchmark.py", line 6, in <module>
-    from qiskit.circuit import QuantumCircuit, Qubit
-ModuleNotFoundError: No module named 'qiskit.circuit'
-Traceback (most recent call last):
-  File "fs_benchmark.py", line 6, in <module>
-    from qiskit.circuit import QuantumCircuit, Qubit
-ModuleNotFoundError: No module named 'qiskit.circuit'
-Traceback (most recent call last):
-  File "fs_benchmark.py", line 6, in <module>
-    from qiskit.circuit import QuantumCircuit, Qubit
-ModuleNotFoundError: No module named 'qiskit.circuit'
-Traceback (most recent call last):
-  File "fs_benchmark.py", line 6, in <module>
-    from qiskit.circuit import QuantumCircuit, Qubit
-ModuleNotFoundError: No module named 'qiskit.circuit'
-Traceback (most recent call last):
-  File "fs_benchmark.py", line 6, in <module>
-    from qiskit.circuit import QuantumCircuit, Qubit
-ModuleNotFoundError: No module named 'qiskit.circuit'
-Traceback (most recent call last):
-  File "fs_benchmark.py", line 6, in <module>
-    from qiskit.circuit import QuantumCircuit, Qubit
-ModuleNotFoundError: No module named 'qiskit.circuit'
-Traceback (most recent call last):
-  File "fs_benchmark.py", line 6, in <module>
-    from qiskit.circuit import QuantumCircuit, Qubit
-ModuleNotFoundError: No module named 'qiskit.circuit'
-Traceback (most recent call last):
-  File "fs_benchmark.py", line 6, in <module>
-    from qiskit.circuit import QuantumCircuit, Qubit
-ModuleNotFoundError: No module named 'qiskit.circuit'
-Traceback (most recent call last):
-  File "fs_benchmark.py", line 6, in <module>
-    from qiskit.circuit import QuantumCircuit, Qubit
-ModuleNotFoundError: No module named 'qiskit.circuit'
-Traceback (most recent call last):
-  File "fs_benchmark.py", line 6, in <module>
-    from qiskit.circuit import QuantumCircuit, Qubit
-ModuleNotFoundError: No module named 'qiskit.circuit'
+sending 2 jobs to host atl1-1-02-010-10-l.pace.gatech.edu (lines 1 to 2)
+sending 1 jobs to host atl1-1-02-010-15-l.pace.gatech.edu (lines 3 to 3)
+cwd:/storage/coda1/p-mqureshi4/0/svittal8/foresight/routing/mpath/src
+Config:
+	workload=medium, backend=aspen9, runs=1
+	flags=
+	output directory=ideal_sim_results/1636934208/medium
+Config:
+	mode: medium
+	coupling style: aspen9
+	runs: 1
+[adder_n10]
+	Benchmark Logging:
+		size, depth = 147 100
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+		(A* done.)
+	SABRE CNOTs: 146.000
+	SABRE Depth: 186.000
+	SABRE Time: 0.142
+	SABRE Memory: 279.894
+	SABRE TVD: 0.000
+	ForeSight CNOTs: 134.000
+	ForeSight Depth: 173.000
+	ForeSight Time: 0.520
+	ForeSight Memory: 1141.589
+	ForeSight TVD: 0.000
+	ForeSight SSOnly CNOTs: 137.000
+	ForeSight SSOnly Depth: 176.000
+	ForeSight SSOnly Time: 0.234
+	ForeSight SSOnly Memory: 209.586
+	ForeSight SSOnly TVD: 0.000
+	A* CNOTs: 155.000
+	A* Depth: 207.000
+	A* Time: 0.029
+	A* Memory: 4.982
+[dnn_n8]
+	Benchmark Logging:
+		size, depth = 1016 173
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+		(A* done.)
+		(A* failure)
+	SABRE CNOTs: 237.000
+	SABRE Depth: 202.000
+	SABRE Time: 0.359
+	SABRE Memory: 1216.967
+	SABRE TVD: 0.131
+	ForeSight CNOTs: 279.000
+	ForeSight Depth: 222.000
+	ForeSight Time: 28.508
+	ForeSight Memory: 7378.508
+	ForeSight TVD: 0.119
+	ForeSight SSOnly CNOTs: 273.000
+	ForeSight SSOnly Depth: 216.000
+	ForeSight SSOnly Time: 5.007
+	ForeSight SSOnly Memory: 1328.768
+	ForeSight SSOnly TVD: 0.129
+	A* CNOTs: 0.000
+	A* Depth: 0.000
+	A* Time: 0.000
+	A* Memory: 0.000
+[cc_n12]
+	Benchmark Logging:
+		size, depth = 61 41
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+Error during mapping: Mapping not possible: circuit contains non-unitary operation: Meas
+		(A* done.)
+		(A* failure)
+	SABRE CNOTs: 39.000
+	SABRE Depth: 52.000
+	SABRE Time: 0.105
+	SABRE Memory: 108.393
+	SABRE TVD: 1.011
+	ForeSight CNOTs: 39.000
+	ForeSight Depth: 52.000
+	ForeSight Time: 0.157
+	ForeSight Memory: 253.865
+	ForeSight TVD: 1.015
+	ForeSight SSOnly CNOTs: 39.000
+	ForeSight SSOnly Depth: 52.000
+	ForeSight SSOnly Time: 0.074
+	ForeSight SSOnly Memory: 193.577
+	ForeSight SSOnly TVD: 1.002
+	A* CNOTs: 0.000
+	A* Depth: 0.000
+	A* Time: 0.000
+	A* Memory: 0.000
+[multiplier_n15]
+	Benchmark Logging:
+		size, depth = 577 256
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+		(A* done.)
+	SABRE CNOTs: 573.000
+	SABRE Depth: 474.000
+	SABRE Time: 0.674
+	SABRE Memory: 1023.988
+	SABRE TVD: 0.000
+	ForeSight CNOTs: 489.000
+	ForeSight Depth: 406.000
+	ForeSight Time: 101.144
+	ForeSight Memory: 39120.057
+	ForeSight TVD: 0.000
+	ForeSight SSOnly CNOTs: 501.000
+	ForeSight SSOnly Depth: 412.000
+	ForeSight SSOnly Time: 8.445
+	ForeSight SSOnly Memory: 756.684
+	ForeSight SSOnly TVD: 0.000
+	A* CNOTs: 636.000
+	A* Depth: 469.000
+	A* Time: 0.037
+	A* Memory: 11.087
+[qf21_n15]
+	Benchmark Logging:
+		size, depth = 317 237
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+Error during mapping: Mapping not possible: circuit contains non-unitary operation: Barr
+		(A* done.)
+		(A* failure)
+	SABRE CNOTs: 301.000
+	SABRE Depth: 342.000
+	SABRE Time: 0.343
+	SABRE Memory: 604.676
+	SABRE TVD: 0.013
+	ForeSight CNOTs: 262.000
+	ForeSight Depth: 349.000
+	ForeSight Time: 6.314
+	ForeSight Memory: 8495.795
+	ForeSight TVD: 0.053
+	ForeSight SSOnly CNOTs: 358.000
+	ForeSight SSOnly Depth: 398.000
+	ForeSight SSOnly Time: 0.857
+	ForeSight SSOnly Memory: 1685.185
+	ForeSight SSOnly TVD: 0.036
+	A* CNOTs: 0.000
+	A* Depth: 0.000
+	A* Time: 0.000
+	A* Memory: 0.000
+[sat_n11]
+	Benchmark Logging:
+		size, depth = 683 410
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+		(A* done.)
+	SABRE CNOTs: 636.000
+	SABRE Depth: 745.000
+	SABRE Time: 0.725
+	SABRE Memory: 1275.948
+	SABRE TVD: 0.031
+	ForeSight CNOTs: 561.000
+	ForeSight Depth: 668.000
+	ForeSight Time: 51.614
+	ForeSight Memory: 23092.640
+	ForeSight TVD: 0.039
+	ForeSight SSOnly CNOTs: 588.000
+	ForeSight SSOnly Depth: 710.000
+	ForeSight SSOnly Time: 4.095
+	ForeSight SSOnly Memory: 3084.380
+	ForeSight SSOnly TVD: 0.034
+	A* CNOTs: 582.000
+	A* Depth: 685.000
+	A* Time: 0.029
+	A* Memory: 11.576
+[seca_n11]
+	Benchmark Logging:
+		size, depth = 226 87
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+Error during mapping: Mapping not possible: circuit contains non-unitary operation: Barr
+		(A* done.)
+		(A* failure)
+	SABRE CNOTs: 171.000
+	SABRE Depth: 133.000
+	SABRE Time: 0.212
+	SABRE Memory: 391.850
+	SABRE TVD: 0.041
+	ForeSight CNOTs: 177.000
+	ForeSight Depth: 137.000
+	ForeSight Time: 35.671
+	ForeSight Memory: 4124.451
+	ForeSight TVD: 0.023
+	ForeSight SSOnly CNOTs: 207.000
+	ForeSight SSOnly Depth: 162.000
+	ForeSight SSOnly Time: 4.636
+	ForeSight SSOnly Memory: 757.622
+	ForeSight SSOnly TVD: 0.025
+	A* CNOTs: 0.000
+	A* Depth: 0.000
+	A* Time: 0.000
+	A* Memory: 0.000
+[bv_n14]
+	Benchmark Logging:
+		size, depth = 56 19
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+Error during mapping: Mapping not possible: circuit contains non-unitary operation: Barr
+		(A* done.)
+		(A* failure)
+	SABRE CNOTs: 55.000
+	SABRE Depth: 41.000
+	SABRE Time: 0.062
+	SABRE Memory: 124.798
+	SABRE TVD: 0.000
+	ForeSight CNOTs: 64.000
+	ForeSight Depth: 63.000
+	ForeSight Time: 0.174
+	ForeSight Memory: 829.316
+	ForeSight TVD: 0.000
+	ForeSight SSOnly CNOTs: 64.000
+	ForeSight SSOnly Depth: 60.000
+	ForeSight SSOnly Time: 0.111
+	ForeSight SSOnly Memory: 407.826
+	ForeSight SSOnly TVD: 0.000
+	A* CNOTs: 0.000
+	A* Depth: 0.000
+	A* Time: 0.000
+	A* Memory: 0.000
+[ising_n10]
+	Benchmark Logging:
+		size, depth = 490 71
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+		(A* done.)
+		(A* failure)
+	SABRE CNOTs: 117.000
+	SABRE Depth: 94.000
+	SABRE Time: 0.179
+	SABRE Memory: 583.256
+	SABRE TVD: 0.266
+	ForeSight CNOTs: 117.000
+	ForeSight Depth: 94.000
+	ForeSight Time: 27.820
+	ForeSight Memory: 3641.479
+	ForeSight TVD: 0.256
+	ForeSight SSOnly CNOTs: 117.000
+	ForeSight SSOnly Depth: 94.000
+	ForeSight SSOnly Time: 2.122
+	ForeSight SSOnly Memory: 313.793
+	ForeSight SSOnly TVD: 0.274
+	A* CNOTs: 0.000
+	A* Depth: 0.000
+	A* Time: 0.000
+	A* Memory: 0.000
+[qaoa_n6]
+	Benchmark Logging:
+		size, depth = 276 110
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+		(A* done.)
+		(A* failure)
+	SABRE CNOTs: 81.000
+	SABRE Depth: 154.000
+	SABRE Time: 0.116
+	SABRE Memory: 346.887
+	SABRE TVD: 0.086
+	ForeSight CNOTs: 87.000
+	ForeSight Depth: 141.000
+	ForeSight Time: 22.281
+	ForeSight Memory: 6304.267
+	ForeSight TVD: 0.091
+	ForeSight SSOnly CNOTs: 90.000
+	ForeSight SSOnly Depth: 144.000
+	ForeSight SSOnly Time: 1.756
+	ForeSight SSOnly Memory: 831.962
+	ForeSight SSOnly TVD: 0.095
+	A* CNOTs: 0.000
+	A* Depth: 0.000
+	A* Time: 0.000
+	A* Memory: 0.000
+[qpe_n9]
+	Benchmark Logging:
+		size, depth = 132 93
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+Error during mapping: Mapping not possible: circuit contains non-unitary operation: Barr
+		(A* done.)
+		(A* failure)
+	SABRE CNOTs: 103.000
+	SABRE Depth: 130.000
+	SABRE Time: 0.114
+	SABRE Memory: 241.696
+	SABRE TVD: 0.087
+	ForeSight CNOTs: 91.000
+	ForeSight Depth: 122.000
+	ForeSight Time: 1.932
+	ForeSight Memory: 3745.001
+	ForeSight TVD: 0.091
+	ForeSight SSOnly CNOTs: 97.000
+	ForeSight SSOnly Depth: 126.000
+	ForeSight SSOnly Time: 0.251
+	ForeSight SSOnly Memory: 529.107
+	ForeSight SSOnly TVD: 0.086
+	A* CNOTs: 0.000
+	A* Depth: 0.000
+	A* Time: 0.000
+	A* Memory: 0.000
+[simon_n6]
+	Benchmark Logging:
+		size, depth = 52 30
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+Error during mapping: Mapping not possible: circuit contains non-unitary operation: Barr
+		(A* done.)
+		(A* failure)
+	SABRE CNOTs: 23.000
+	SABRE Depth: 39.000
+	SABRE Time: 0.028
+	SABRE Memory: 75.522
+	SABRE TVD: 0.052
+	ForeSight CNOTs: 23.000
+	ForeSight Depth: 37.000
+	ForeSight Time: 0.240
+	ForeSight Memory: 661.710
+	ForeSight TVD: 0.055
+	ForeSight SSOnly CNOTs: 23.000
+	ForeSight SSOnly Depth: 37.000
+	ForeSight SSOnly Time: 0.084
+	ForeSight SSOnly Memory: 197.952
+	ForeSight SSOnly TVD: 0.054
+	A* CNOTs: 0.000
+	A* Depth: 0.000
+	A* Time: 0.000
+	A* Memory: 0.000
+[vqe_uccsd_n6]
+	Benchmark Logging:
+		size, depth = 2282 1486
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+		(A* done.)
+	SABRE CNOTs: 1097.000
+	SABRE Depth: 1511.000
+	SABRE Time: 0.710
+	SABRE Memory: 3055.135
+	SABRE TVD: 0.072
+	ForeSight CNOTs: 1091.000
+	ForeSight Depth: 1511.000
+	ForeSight Time: 8.702
+	ForeSight Memory: 14424.699
+	ForeSight TVD: 0.073
+	ForeSight SSOnly CNOTs: 1094.000
+	ForeSight SSOnly Depth: 1520.000
+	ForeSight SSOnly Time: 1.373
+	ForeSight SSOnly Memory: 1433.129
+	ForeSight SSOnly TVD: 0.065
+	A* CNOTs: 1226.000
+	A* Depth: 1648.000
+	A* Time: 0.028
+	A* Memory: 29.891
+/storage/coda1/p-mqureshi4/0/svittal8/foresight/routing/mpath/src/venv/lib64/python3.6/site-packages/qiskit/__init__.py:66: DeprecationWarning: Using Qiskit with Python 3.6 is deprecated as of qiskit-terra 0.17.0. Support for running Qiskit with Python 3.6 will be removed in qiskit-terra 0.20.0.
+  DeprecationWarning,
+cwd:/storage/coda1/p-mqureshi4/0/svittal8/foresight/routing/mpath/src
+Config:
+	workload=medium, backend=weber, runs=1
+	flags=
+	output directory=ideal_sim_results/1636934208/medium
+Config:
+	mode: medium
+	coupling style: weber
+	runs: 1
+[adder_n10]
+	Benchmark Logging:
+		size, depth = 147 100
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+		(A* done.)
+	SABRE CNOTs: 122.000
+	SABRE Depth: 158.000
+	SABRE Time: 0.126
+	SABRE Memory: 273.542
+	SABRE TVD: 0.000
+	ForeSight CNOTs: 110.000
+	ForeSight Depth: 139.000
+	ForeSight Time: 6.515
+	ForeSight Memory: 3315.745
+	ForeSight TVD: 0.000
+	ForeSight SSOnly CNOTs: 122.000
+	ForeSight SSOnly Depth: 152.000
+	ForeSight SSOnly Time: 0.869
+	ForeSight SSOnly Memory: 827.757
+	ForeSight SSOnly TVD: 0.000
+	A* CNOTs: 104.000
+	A* Depth: 127.000
+	A* Time: 0.011
+	A* Memory: 4.741
+[dnn_n8]
+	Benchmark Logging:
+		size, depth = 1016 173
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+		(A* done.)
+		(A* failure)
+	SABRE CNOTs: 192.000
+	SABRE Depth: 173.000
+	SABRE Time: 0.268
+	SABRE Memory: 1167.090
+	SABRE TVD: 0.132
+	ForeSight CNOTs: 192.000
+	ForeSight Depth: 173.000
+	ForeSight Time: 0.363
+	ForeSight Memory: 601.145
+	ForeSight TVD: 0.136
+	ForeSight SSOnly CNOTs: 192.000
+	ForeSight SSOnly Depth: 173.000
+	ForeSight SSOnly Time: 0.269
+	ForeSight SSOnly Memory: 527.996
+	ForeSight SSOnly TVD: 0.159
+	A* CNOTs: 0.000
+	A* Depth: 0.000
+	A* Time: 0.000
+	A* Memory: 0.000
+[cc_n12]
+	Benchmark Logging:
+		size, depth = 61 41
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+Error during mapping: Mapping not possible: circuit contains non-unitary operation: Meas
+		(A* done.)
+		(A* failure)
+	SABRE CNOTs: 42.000
+	SABRE Depth: 50.000
+	SABRE Time: 0.063
+	SABRE Memory: 115.563
+	SABRE TVD: 0.992
+	ForeSight CNOTs: 42.000
+	ForeSight Depth: 50.000
+	ForeSight Time: 0.414
+	ForeSight Memory: 627.250
+	ForeSight TVD: 0.994
+	ForeSight SSOnly CNOTs: 42.000
+	ForeSight SSOnly Depth: 50.000
+	ForeSight SSOnly Time: 0.155
+	ForeSight SSOnly Memory: 164.620
+	ForeSight SSOnly TVD: 1.003
+	A* CNOTs: 0.000
+	A* Depth: 0.000
+	A* Time: 0.000
+	A* Memory: 0.000
+[multiplier_n15]
+	Benchmark Logging:
+		size, depth = 577 256
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+		(A* done.)
+	SABRE CNOTs: 531.000
+	SABRE Depth: 472.000
+	SABRE Time: 0.715
+	SABRE Memory: 1057.020
+	SABRE TVD: 0.000
+	ForeSight CNOTs: 504.000
+	ForeSight Depth: 397.000
+	ForeSight Time: 285.537
+	ForeSight Memory: 63164.073
+	ForeSight TVD: 0.000
+	ForeSight SSOnly CNOTs: 552.000
+	ForeSight SSOnly Depth: 427.000
+	ForeSight SSOnly Time: 15.916
+	ForeSight SSOnly Memory: 4539.177
+	ForeSight SSOnly TVD: 0.000
+	A* CNOTs: 558.000
+	A* Depth: 467.000
+	A* Time: 0.035
+	A* Memory: 10.624
+[qf21_n15]
+	Benchmark Logging:
+		size, depth = 317 237
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+Error during mapping: Mapping not possible: circuit contains non-unitary operation: Barr
+		(A* done.)
+		(A* failure)
+	SABRE CNOTs: 235.000
+	SABRE Depth: 315.000
+	SABRE Time: 0.285
+	SABRE Memory: 541.874
+	SABRE TVD: 0.038
+	ForeSight CNOTs: 214.000
+	ForeSight Depth: 309.000
+	ForeSight Time: 24.399
+	ForeSight Memory: 13388.576
+	ForeSight TVD: 0.039
+	ForeSight SSOnly CNOTs: 325.000
+	ForeSight SSOnly Depth: 359.000
+	ForeSight SSOnly Time: 3.215
+	ForeSight SSOnly Memory: 1981.922
+	ForeSight SSOnly TVD: 0.039
+	A* CNOTs: 0.000
+	A* Depth: 0.000
+	A* Time: 0.000
+	A* Memory: 0.000
+[sat_n11]
+	Benchmark Logging:
+		size, depth = 683 410
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+		(A* done.)
+	SABRE CNOTs: 612.000
+	SABRE Depth: 662.000
+	SABRE Time: 0.783
+	SABRE Memory: 1253.740
+	SABRE TVD: 0.049
+	ForeSight CNOTs: 504.000
+	ForeSight Depth: 595.000
+	ForeSight Time: 128.339
+	ForeSight Memory: 51020.387
+	ForeSight TVD: 0.043
+	ForeSight SSOnly CNOTs: 549.000
+	ForeSight SSOnly Depth: 627.000
+	ForeSight SSOnly Time: 7.179
+	ForeSight SSOnly Memory: 2853.145
+	ForeSight SSOnly TVD: 0.060
+	A* CNOTs: 480.000
+	A* Depth: 579.000
+	A* Time: 0.021
+	A* Memory: 10.969
+[seca_n11]
+	Benchmark Logging:
+		size, depth = 226 87
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+Error during mapping: Mapping not possible: circuit contains non-unitary operation: Barr
+		(A* done.)
+		(A* failure)
+	SABRE CNOTs: 147.000
+	SABRE Depth: 114.000
+	SABRE Time: 0.305
+	SABRE Memory: 370.479
+	SABRE TVD: 0.018
+	ForeSight CNOTs: 153.000
+	ForeSight Depth: 121.000
+	ForeSight Time: 22.069
+	ForeSight Memory: 4494.064
+	ForeSight TVD: 0.010
+	ForeSight SSOnly CNOTs: 159.000
+	ForeSight SSOnly Depth: 125.000
+	ForeSight SSOnly Time: 6.901
+	ForeSight SSOnly Memory: 1066.932
+	ForeSight SSOnly TVD: 0.022
+	A* CNOTs: 0.000
+	A* Depth: 0.000
+	A* Time: 0.000
+	A* Memory: 0.000
+[bv_n14]
+	Benchmark Logging:
+		size, depth = 56 19
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+Error during mapping: Mapping not possible: circuit contains non-unitary operation: Barr
+		(A* done.)
+		(A* failure)
+	SABRE CNOTs: 40.000
+	SABRE Depth: 40.000
+	SABRE Time: 0.051
+	SABRE Memory: 106.300
+	SABRE TVD: 0.000
+	ForeSight CNOTs: 34.000
+	ForeSight Depth: 37.000
+	ForeSight Time: 0.272
+	ForeSight Memory: 865.302
+	ForeSight TVD: 0.000
+	ForeSight SSOnly CNOTs: 34.000
+	ForeSight SSOnly Depth: 38.000
+	ForeSight SSOnly Time: 0.087
+	ForeSight SSOnly Memory: 146.304
+	ForeSight SSOnly TVD: 0.000
+	A* CNOTs: 0.000
+	A* Depth: 0.000
+	A* Time: 0.000
+	A* Memory: 0.000
+[ising_n10]
+	Benchmark Logging:
+		size, depth = 490 71
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+		(A* done.)
+		(A* failure)
+	SABRE CNOTs: 105.000
+	SABRE Depth: 115.000
+	SABRE Time: 0.156
+	SABRE Memory: 572.877
+	SABRE TVD: 0.260
+	ForeSight CNOTs: 102.000
+	ForeSight Depth: 74.000
+	ForeSight Time: 2.260
+	ForeSight Memory: 3715.000
+	ForeSight TVD: 0.261
+	ForeSight SSOnly CNOTs: 114.000
+	ForeSight SSOnly Depth: 78.000
+	ForeSight SSOnly Time: 0.624
+	ForeSight SSOnly Memory: 329.566
+	ForeSight SSOnly TVD: 0.269
+	A* CNOTs: 0.000
+	A* Depth: 0.000
+	A* Time: 0.000
+	A* Memory: 0.000
+[qaoa_n6]
+	Benchmark Logging:
+		size, depth = 276 110
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+		(A* done.)
+		(A* failure)
+	SABRE CNOTs: 78.000
+	SABRE Depth: 149.000
+	SABRE Time: 0.121
+	SABRE Memory: 347.525
+	SABRE TVD: 0.086
+	ForeSight CNOTs: 78.000
+	ForeSight Depth: 132.000
+	ForeSight Time: 35.571
+	ForeSight Memory: 9995.674
+	ForeSight TVD: 0.094
+	ForeSight SSOnly CNOTs: 90.000
+	ForeSight SSOnly Depth: 140.000
+	ForeSight SSOnly Time: 3.577
+	ForeSight SSOnly Memory: 1171.156
+	ForeSight SSOnly TVD: 0.096
+	A* CNOTs: 0.000
+	A* Depth: 0.000
+	A* Time: 0.000
+	A* Memory: 0.000
+[qpe_n9]
+	Benchmark Logging:
+		size, depth = 132 93
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+Error during mapping: Mapping not possible: circuit contains non-unitary operation: Barr
+		(A* done.)
+		(A* failure)
+	SABRE CNOTs: 82.000
+	SABRE Depth: 117.000
+	SABRE Time: 0.097
+	SABRE Memory: 219.022
+	SABRE TVD: 0.089
+	ForeSight CNOTs: 76.000
+	ForeSight Depth: 115.000
+	ForeSight Time: 6.174
+	ForeSight Memory: 5117.499
+	ForeSight TVD: 0.083
+	ForeSight SSOnly CNOTs: 136.000
+	ForeSight SSOnly Depth: 149.000
+	ForeSight SSOnly Time: 0.671
+	ForeSight SSOnly Memory: 828.785
+	ForeSight SSOnly TVD: 0.092
+	A* CNOTs: 0.000
+	A* Depth: 0.000
+	A* Time: 0.000
+	A* Memory: 0.000
+[simon_n6]
+	Benchmark Logging:
+		size, depth = 52 30
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+Error during mapping: Mapping not possible: circuit contains non-unitary operation: Barr
+		(A* done.)
+		(A* failure)
+	SABRE CNOTs: 29.000
+	SABRE Depth: 44.000
+	SABRE Time: 0.037
+	SABRE Memory: 88.016
+	SABRE TVD: 0.067
+	ForeSight CNOTs: 26.000
+	ForeSight Depth: 42.000
+	ForeSight Time: 0.094
+	ForeSight Memory: 222.477
+	ForeSight TVD: 0.059
+	ForeSight SSOnly CNOTs: 26.000
+	ForeSight SSOnly Depth: 42.000
+	ForeSight SSOnly Time: 0.092
+	ForeSight SSOnly Memory: 191.457
+	ForeSight SSOnly TVD: 0.045
+	A* CNOTs: 0.000
+	A* Depth: 0.000
+	A* Time: 0.000
+	A* Memory: 0.000
+[vqe_uccsd_n6]
+	Benchmark Logging:
+		size, depth = 2282 1486
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+		(A* done.)
+	SABRE CNOTs: 1124.000
+	SABRE Depth: 1569.000
+	SABRE Time: 0.869
+	SABRE Memory: 3234.137
+	SABRE TVD: 0.067
+	ForeSight CNOTs: 1118.000
+	ForeSight Depth: 1553.000
+	ForeSight Time: 30.113
+	ForeSight Memory: 25805.284
+	ForeSight TVD: 0.062
+	ForeSight SSOnly CNOTs: 1118.000
+	ForeSight SSOnly Depth: 1554.000
+	ForeSight SSOnly Time: 2.430
+	ForeSight SSOnly Memory: 2880.663
+	ForeSight SSOnly TVD: 0.067
+	A* CNOTs: 1133.000
+	A* Depth: 1546.000
+	A* Time: 0.051
+	A* Memory: 29.438
+/storage/coda1/p-mqureshi4/0/svittal8/foresight/routing/mpath/src/venv/lib64/python3.6/site-packages/qiskit/__init__.py:66: DeprecationWarning: Using Qiskit with Python 3.6 is deprecated as of qiskit-terra 0.17.0. Support for running Qiskit with Python 3.6 will be removed in qiskit-terra 0.20.0.
+  DeprecationWarning,
+/var/spool/torque/mom_priv/jobs/3529639.sched-torque.pace.gatech.edu.SC: line 32: 182584 Done                    sed -ne "${anchor},${endAnchor}${EXTRA}p" ${JOBFILE}
+     182585 Segmentation fault      (core dumped) | parallel --workdir $PBS_O_WORKDIR --joblog +$PBS_O_WORKDIR/$PBS_JOBNAME.gnu$(cut -f1 -d. <<<$PBS_JOBID) -S ${numJobs}/${i} --sshdelay 0.2
+cwd:/storage/coda1/p-mqureshi4/0/svittal8/foresight/routing/mpath/src
+Config:
+	workload=medium, backend=tokyo, runs=1
+	flags=
+	output directory=ideal_sim_results/1636934209/medium
+Config:
+	mode: medium
+	coupling style: tokyo
+	runs: 1
+[adder_n10]
+	Benchmark Logging:
+		size, depth = 147 100
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+		(A* done.)
+	SABRE CNOTs: 80.000
+	SABRE Depth: 120.000
+	SABRE Time: 0.066
+	SABRE Memory: 210.723
+	SABRE TVD: 0.000
+	ForeSight CNOTs: 77.000
+	ForeSight Depth: 113.000
+	ForeSight Time: 0.232
+	ForeSight Memory: 345.750
+	ForeSight TVD: 0.000
+	ForeSight SSOnly CNOTs: 77.000
+	ForeSight SSOnly Depth: 113.000
+	ForeSight SSOnly Time: 0.239
+	ForeSight SSOnly Memory: 316.156
+	ForeSight SSOnly TVD: 0.000
+	A* CNOTs: 122.000
+	A* Depth: 158.000
+	A* Time: 0.434
+	A* Memory: 4.816
+[dnn_n8]
+	Benchmark Logging:
+		size, depth = 1016 173
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+		(A* done.)
+		(A* failure)
+	SABRE CNOTs: 201.000
+	SABRE Depth: 246.000
+	SABRE Time: 0.287
+	SABRE Memory: 1245.389
+	SABRE TVD: 0.129
+	ForeSight CNOTs: 231.000
+	ForeSight Depth: 212.000
+	ForeSight Time: 43.485
+	ForeSight Memory: 34796.957
+	ForeSight TVD: 0.130
+	ForeSight SSOnly CNOTs: 234.000
+	ForeSight SSOnly Depth: 211.000
+	ForeSight SSOnly Time: 1.746
+	ForeSight SSOnly Memory: 1494.313
+	ForeSight SSOnly TVD: 0.119
+	A* CNOTs: 0.000
+	A* Depth: 0.000
+	A* Time: 0.000
+	A* Memory: 0.000
+[cc_n12]
+	Benchmark Logging:
+		size, depth = 61 41
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+Error during mapping: Mapping not possible: circuit contains non-unitary operation: Meas
+		(A* done.)
+		(A* failure)
+	SABRE CNOTs: 24.000
+	SABRE Depth: 38.000
+	SABRE Time: 0.038
+	SABRE Memory: 83.699
+	SABRE TVD: 0.993
+	ForeSight CNOTs: 24.000
+	ForeSight Depth: 38.000
+	ForeSight Time: 0.113
+	ForeSight Memory: 143.626
+	ForeSight TVD: 0.995
+	ForeSight SSOnly CNOTs: 24.000
+	ForeSight SSOnly Depth: 38.000
+	ForeSight SSOnly Time: 0.119
+	ForeSight SSOnly Memory: 128.345
+	ForeSight SSOnly TVD: 0.994
+	A* CNOTs: 0.000
+	A* Depth: 0.000
+	A* Time: 0.000
+	A* Memory: 0.000
+[multiplier_n15]
+	Benchmark Logging:
+		size, depth = 577 256
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+		(A* done.)
+	SABRE CNOTs: 444.000
+	SABRE Depth: 440.000
+	SABRE Time: 0.638
+	SABRE Memory: 902.019
+	SABRE TVD: 0.000
+	ForeSight CNOTs: 420.000
+	ForeSight Depth: 362.000
+	ForeSight Time: 335.015
+	ForeSight Memory: 61047.057
+	ForeSight TVD: 0.000
+	ForeSight SSOnly CNOTs: 498.000
+	ForeSight SSOnly Depth: 418.000
+	ForeSight SSOnly Time: 20.164
+	ForeSight SSOnly Memory: 3543.784
+	ForeSight SSOnly TVD: 0.000
+	A* CNOTs: 531.000
+	A* Depth: 450.000
+	A* Time: 0.037
+	A* Memory: 10.556
+[qf21_n15]
+	Benchmark Logging:
+		size, depth = 317 237
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+Error during mapping: Mapping not possible: circuit contains non-unitary operation: Barr
+		(A* done.)
+		(A* failure)
+	SABRE CNOTs: 202.000
+	SABRE Depth: 276.000
+	SABRE Time: 0.236
+	SABRE Memory: 491.187
+	SABRE TVD: 0.043
+	ForeSight CNOTs: 187.000
+	ForeSight Depth: 288.000
+	ForeSight Time: 24.120
+	ForeSight Memory: 5490.791
+	ForeSight TVD: 0.050
+	ForeSight SSOnly CNOTs: 253.000
+	ForeSight SSOnly Depth: 312.000
+	ForeSight SSOnly Time: 3.332
+	ForeSight SSOnly Memory: 574.188
+	ForeSight SSOnly TVD: 0.039
+	A* CNOTs: 0.000
+	A* Depth: 0.000
+	A* Time: 0.000
+	A* Memory: 0.000
+[sat_n11]
+	Benchmark Logging:
+		size, depth = 683 410
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+		(A* done.)
+	SABRE CNOTs: 360.000
+	SABRE Depth: 490.000
+	SABRE Time: 0.384
+	SABRE Memory: 987.590
+	SABRE TVD: 0.053
+	ForeSight CNOTs: 309.000
+	ForeSight Depth: 450.000
+	ForeSight Time: 37.269
+	ForeSight Memory: 8209.438
+	ForeSight TVD: 0.032
+	ForeSight SSOnly CNOTs: 429.000
+	ForeSight SSOnly Depth: 563.000
+	ForeSight SSOnly Time: 9.196
+	ForeSight SSOnly Memory: 1636.809
+	ForeSight SSOnly TVD: 0.055
+	A* CNOTs: 381.000
+	A* Depth: 524.000
+	A* Time: 0.028
+	A* Memory: 10.504
+[seca_n11]
+	Benchmark Logging:
+		size, depth = 226 87
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+Error during mapping: Mapping not possible: circuit contains non-unitary operation: Barr
+		(A* done.)
+		(A* failure)
+	SABRE CNOTs: 132.000
+	SABRE Depth: 124.000
+	SABRE Time: 0.151
+	SABRE Memory: 345.343
+	SABRE TVD: 0.019
+	ForeSight CNOTs: 147.000
+	ForeSight Depth: 116.000
+	ForeSight Time: 77.146
+	ForeSight Memory: 6092.187
+	ForeSight TVD: 0.008
+	ForeSight SSOnly CNOTs: 141.000
+	ForeSight SSOnly Depth: 121.000
+	ForeSight SSOnly Time: 6.008
+	ForeSight SSOnly Memory: 575.947
+	ForeSight SSOnly TVD: 0.010
+	A* CNOTs: 0.000
+	A* Depth: 0.000
+	A* Time: 0.000
+	A* Memory: 0.000
+[bv_n14]
+	Benchmark Logging:
+		size, depth = 56 19
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+Error during mapping: Mapping not possible: circuit contains non-unitary operation: Barr
+		(A* done.)
+		(A* failure)
+	SABRE CNOTs: 31.000
+	SABRE Depth: 26.000
+	SABRE Time: 0.039
+	SABRE Memory: 86.727
+	SABRE TVD: 0.000
+	ForeSight CNOTs: 37.000
+	ForeSight Depth: 41.000
+	ForeSight Time: 0.479
+	ForeSight Memory: 852.434
+	ForeSight TVD: 0.000
+	ForeSight SSOnly CNOTs: 37.000
+	ForeSight SSOnly Depth: 38.000
+	ForeSight SSOnly Time: 0.284
+	ForeSight SSOnly Memory: 339.680
+	ForeSight SSOnly TVD: 0.000
+	A* CNOTs: 0.000
+	A* Depth: 0.000
+	A* Time: 0.000
+	A* Memory: 0.000
+[ising_n10]
+	Benchmark Logging:
+		size, depth = 490 71
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+		(A* done.)
+		(A* failure)
+	SABRE CNOTs: 90.000
+	SABRE Depth: 71.000
+	SABRE Time: 0.128
+	SABRE Memory: 543.221
+	SABRE TVD: 0.248
+	ForeSight CNOTs: 90.000
+	ForeSight Depth: 71.000
+	ForeSight Time: 0.126
+	ForeSight Memory: 596.396
+	ForeSight TVD: 0.249
+	ForeSight SSOnly CNOTs: 90.000
+	ForeSight SSOnly Depth: 71.000
+	ForeSight SSOnly Time: 0.130
+	ForeSight SSOnly Memory: 566.014
+	ForeSight SSOnly TVD: 0.265
+	A* CNOTs: 0.000
+	A* Depth: 0.000
+	A* Time: 0.000
+	A* Memory: 0.000
+[qaoa_n6]
+	Benchmark Logging:
+		size, depth = 276 110
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+		(A* done.)
+		(A* failure)
+	SABRE CNOTs: 69.000
+	SABRE Depth: 171.000
+	SABRE Time: 0.104
+	SABRE Memory: 327.082
+	SABRE TVD: 0.086
+	ForeSight CNOTs: 84.000
+	ForeSight Depth: 138.000
+	ForeSight Time: 31.852
+	ForeSight Memory: 11070.612
+	ForeSight TVD: 0.097
+	ForeSight SSOnly CNOTs: 90.000
+	ForeSight SSOnly Depth: 138.000
+	ForeSight SSOnly Time: 2.114
+	ForeSight SSOnly Memory: 530.065
+	ForeSight SSOnly TVD: 0.098
+	A* CNOTs: 0.000
+	A* Depth: 0.000
+	A* Time: 0.000
+	A* Memory: 0.000
+[qpe_n9]
+	Benchmark Logging:
+		size, depth = 132 93
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+Error during mapping: Mapping not possible: circuit contains non-unitary operation: Barr
+		(A* done.)
+		(A* failure)
+	SABRE CNOTs: 67.000
+	SABRE Depth: 105.000
+	SABRE Time: 0.075
+	SABRE Memory: 191.289
+	SABRE TVD: 0.076
+	ForeSight CNOTs: 76.000
+	ForeSight Depth: 112.000
+	ForeSight Time: 8.693
+	ForeSight Memory: 2265.993
+	ForeSight TVD: 0.076
+	ForeSight SSOnly CNOTs: 91.000
+	ForeSight SSOnly Depth: 119.000
+	ForeSight SSOnly Time: 1.154
+	ForeSight SSOnly Memory: 414.435
+	ForeSight SSOnly TVD: 0.077
+	A* CNOTs: 0.000
+	A* Depth: 0.000
+	A* Time: 0.000
+	A* Memory: 0.000
+[simon_n6]
+	Benchmark Logging:
+		size, depth = 52 30
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+Error during mapping: Mapping not possible: circuit contains non-unitary operation: Barr
+		(A* done.)
+		(A* failure)
+	SABRE CNOTs: 29.000
+	SABRE Depth: 44.000
+	SABRE Time: 0.036
+	SABRE Memory: 80.119
+	SABRE TVD: 0.061
+	ForeSight CNOTs: 23.000
+	ForeSight Depth: 39.000
+	ForeSight Time: 0.162
+	ForeSight Memory: 182.546
+	ForeSight TVD: 0.056
+	ForeSight SSOnly CNOTs: 23.000
+	ForeSight SSOnly Depth: 39.000
+	ForeSight SSOnly Time: 0.084
+	ForeSight SSOnly Memory: 160.947
+	ForeSight SSOnly TVD: 0.070
+	A* CNOTs: 0.000
+	A* Depth: 0.000
+	A* Time: 0.000
+	A* Memory: 0.000
+[vqe_uccsd_n6]
+	Benchmark Logging:
+		size, depth = 2282 1486
+		(sabre start.)
+		(sabre done.)
+		(foresight start.)
+		(foresight done.)
+		(ssonly start.)
+		(ssonly done).
+		(A* start.)
+		(A* done.)
+	SABRE CNOTs: 1352.000
+	SABRE Depth: 1783.000
+	SABRE Time: 1.215
+	SABRE Memory: 3315.703
+	SABRE TVD: 0.065
+	ForeSight CNOTs: 1352.000
+	ForeSight Depth: 1778.000
+	ForeSight Time: 251.352
+	ForeSight Memory: 1862.395
+	ForeSight TVD: 0.066
+	ForeSight SSOnly CNOTs: 1352.000
+	ForeSight SSOnly Depth: 1777.000
+	ForeSight SSOnly Time: 9.337
+	ForeSight SSOnly Memory: 4353.837
+	ForeSight SSOnly TVD: 0.057
+	A* CNOTs: 1073.000
+	A* Depth: 1492.000
+	A* Time: 0.048
+	A* Memory: 29.009
+/storage/coda1/p-mqureshi4/0/svittal8/foresight/routing/mpath/src/venv/lib64/python3.6/site-packages/qiskit/__init__.py:66: DeprecationWarning: Using Qiskit with Python 3.6 is deprecated as of qiskit-terra 0.17.0. Support for running Qiskit with Python 3.6 will be removed in qiskit-terra 0.20.0.
+  DeprecationWarning,
+/var/spool/torque/mom_priv/jobs/3529639.sched-torque.pace.gatech.edu.SC: line 32: 182591 Done                    sed -ne "${anchor},${endAnchor}${EXTRA}p" ${JOBFILE}
+     182592 Segmentation fault      (core dumped) | parallel --workdir $PBS_O_WORKDIR --joblog +$PBS_O_WORKDIR/$PBS_JOBNAME.gnu$(cut -f1 -d. <<<$PBS_JOBID) -S ${numJobs}/${i} --sshdelay 0.2
 ---------------------------------------
-Begin PBS Epilogue Sun Nov 14 01:36:37 EST 2021
-Job ID:     3528058.sched-torque.pace.gatech.edu
+Begin PBS Epilogue Sun Nov 14 19:12:51 EST 2021
+Job ID:     3529639.sched-torque.pace.gatech.edu
 User ID:    svittal8
-Job name:   ideal_sim
-Resources:  nodes=4:ppn=4,pmem=16gb,walltime=12:00:00,neednodes=4:ppn=4
-Rsrc Used:  cput=00:00:00,vmem=0kb,walltime=00:00:01,mem=0kb,energy_used=0
+Job name:   run_ideal.pbs
+Resources:  pmem=4gb,nodes=3:ppn=4,neednodes=3:ppn=4,walltime=01:00:00
+Rsrc Used:  cput=00:00:01,vmem=1158980kb,walltime=00:16:03,mem=33888kb,energy_used=0
 Queue:      inferno
 Nodes:     
-atl1-1-02-002-5-l.pace.gatech.edu
-End PBS Epilogue Sun Nov 14 01:36:37 EST 2021
+atl1-1-02-010-10-l.pace.gatech.edu atl1-1-02-010-15-l.pace.gatech.edu
+End PBS Epilogue Sun Nov 14 19:12:51 EST 2021
 ---------------------------------------
 ---------------------------------------
-Begin PBS Prologue Sun Nov 14 01:39:18 EST 2021
-Job ID:     3528066.sched-torque.pace.gatech.edu
+Begin PBS Prologue Sun Nov 14 19:31:43 EST 2021
+Job ID:     3529681.sched-torque.pace.gatech.edu
 User ID:    svittal8
-Job name:   ideal_sim
+Job name:   medium_test
 Queue:      inferno
-End PBS Prologue Sun Nov 14 01:39:18 EST 2021
+End PBS Prologue Sun Nov 14 19:31:43 EST 2021
 ---------------------------------------
+sending 1 jobs to host atl1-1-03-004-2-r.pace.gatech.edu (lines 1 to 1)
+sending 2 jobs to host atl1-1-03-004-1-r.pace.gatech.edu (lines 2 to 3)

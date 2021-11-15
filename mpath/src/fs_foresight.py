@@ -21,7 +21,7 @@ from copy import copy, deepcopy
 from collections import deque
 
 class ForeSight(TransformationPass):
-    def __init__(self, coupling_map, slack=2, solution_cap=32, edge_weights=None, depth_minimize=False):
+    def __init__(self, coupling_map, slack=2, solution_cap=32, edge_weights=None, depth_minimize=False, debug=False):
         super().__init__()
 
         self.slack = slack
@@ -33,6 +33,7 @@ class ForeSight(TransformationPass):
         self.mean_degree = len(self.coupling_map.get_edges()) / self.coupling_map.size()
 
         self.fake_run = False
+        self.debug = debug
             
     def run(self, dag):
         mapped_dag = dag._copy_circuit_metadata()
@@ -106,6 +107,9 @@ class ForeSight(TransformationPass):
             solver_queue.append((base_layout, i))
         look = 0
         while len(solver_queue) <= 2*self.solution_cap:
+            if self.debug:
+                print('Layer Number:', len(primary_layer_view))
+                print('\tSolver Queue Size:', len(solver_queue))
             if len(primary_layer_view) == 0:
                 break
             next_solver_queue = []
@@ -206,12 +210,14 @@ class ForeSight(TransformationPass):
                 post_ops.append(op)
                 target_list.append((q0, q1))
                 target_to_op[(q0, q1)] = op
+
         # Build PPC and get candidate list.
         if len(path_collection_list) == 0:
             return [(output_layers, current_layout, 0)] 
         path_selector = ForeSightSelector(path_collection_list, len(self.coupling_map.physical_qubits), len(path_collection_list))
         candidate_list, suggestions = path_selector.find_and_join(self, target_list, current_layout, post_primary_layer_view)
         if candidate_list is None:  # We failed, take the suggestions.
+            
             tmp_pl_view = deepcopy(primary_layer_view)
             tmp_sl_view = deepcopy(secondary_layer_view)
             # Remove top layer from both views.
@@ -243,9 +249,14 @@ class ForeSight(TransformationPass):
                         next_solutions.append((prev_layers_cpy, layout, prev_swaps+num_swaps))
                 tmp_pl_view.popleft()
                 tmp_sl_view.popleft()
+
+                next_solution_cap = 1
+                if len(next_solutions) > 2:
+                    kept_soln_indices = np.random.choice(np.arange(len(next_solutions)), size=1)  
+                    next_solutions = [next_solutions[k] for k in kept_soln_indices]
                 solutions = next_solutions
             return solutions
-                
+
         # Compute all solutions.
         solutions = []
         

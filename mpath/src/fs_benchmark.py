@@ -80,13 +80,14 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
         _pad_circuit_to_fit(circ, coupling_map)
         circ = filter_pass.run(circ)
 
-        benchmark_results = None
+        benchmark_results = defaultdict(int)
         try:
             benchmark_pm.run(circ)
             benchmark_results = benchmark_pass.benchmark_results    
             circ.remove_final_measurements()
 
             # Collect results from A* search
+            print('\t\t(A* start.)')
             qmap_start = timer()
             tracemalloc.start(25)
             qmap_res = qmap.compile(
@@ -98,6 +99,7 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
             ss = tracemalloc.take_snapshot()
             qmap_end = timer()
             tracemalloc.stop()
+            print('\t\t(A* done.)')
             # Benchmark A* search
             qmap_circ = QuantumCircuit.from_qasm_str(qmap_res['mapped_circuit']['qasm'])
             qmap_circ.global_phase = circ.global_phase
@@ -107,18 +109,19 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
             benchmark_results['A* Time'] = qmap_end - qmap_start
             benchmark_results['A* Memory'] = sum(stat.size for stat in ss.statistics('traceback'))/1024.0
         except (QiskitError, KeyError) as error:
-            print('\t\t\t(A* failure)')
+            print('\t\t(A* failure)')
+            benchmark_results['A* CNOTs'] = 0
+            benchmark_results['A* Depth'] = 0
+            benchmark_results['A* Time'] = 0
+            benchmark_results['A* Memory'] = 0
             
-        if benchmark_results:
-            if benchmark_results['SABRE CNOTs'] == -1:
-                print('\tN/A')
-            else:
-                for x in benchmark_results:
-                    print('\t%s: %.3f' % (x, benchmark_results[x]))
-            for x in benchmark_results:
-                data[x].append(benchmark_results[x])
-        else:
+        if benchmark_results['SABRE CNOTs'] == -1:
             print('\tN/A')
+        else:
+            for x in benchmark_results:
+                print('\t%s: %.3f' % (x, benchmark_results[x]))
+        for x in benchmark_results:
+            data[x].append(benchmark_results[x])
     df = pd.DataFrame(data=data, index=used_benchmarks)
     df.to_csv(out_file)
     
@@ -130,11 +133,14 @@ if __name__ == '__main__':
     file_out = argv[4]
     
     benchmark_kwargs = {
-        'sim': True
+        'sim': True,
+        'debug': False
     }
     if len(argv) > 5:
         if '--nosim' in argv:
             benchmark_kwargs['sim'] = False
+        if '--debug' in argv:
+            benchmark_kwargs['debug'] = True
 
     print('Config:\n\tmode: %s\n\tcoupling style: %s\n\truns: %d'
             % (mode, coupling_style, runs))
