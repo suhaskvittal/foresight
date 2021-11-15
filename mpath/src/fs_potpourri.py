@@ -8,17 +8,90 @@ from qiskit.transpiler.passes import *
 from qiskit.transpiler import CouplingMap, PassManager
 
 from fs_exec import _pad_circuit_to_fit, draw
-from fs_ips import ForeSight
-from fs_util import G_QAOA,\
-                    G_IBM_TORONTO,\
-                    G_RIGETTI_ASPEN9,\
-                    G_GOOGLE_WEBER,\
-                    G_QISKIT_GATE_SET
+from fs_foresight import ForeSight
+from fs_util import *
 
 import pandas as pd
 import pickle as pkl
 
+import os
 from collections import defaultdict
+
+def convert_integer_to_bstring(num):
+	'''
+	Function to convert an integer into bitstring
+	'''
+	bstring = ''
+	flag = 0 
+	if(num>1):
+		bstring = convert_integer_to_bstring(num // 2)
+	bstring = bstring+ str(num % 2)
+	return bstring
+
+def padding_for_binary(bstring, expected_length):
+	''' 
+	Function to pad a bitstring with 0s and stretch it to a given length
+	'''
+	curr_length = len(bstring)
+	if(expected_length > curr_length):
+		diff_length = expected_length - curr_length
+		padding = ''
+		for i in range(diff_length):
+			padding = padding + str(0)
+		bstring = padding + bstring
+	return bstring
+
+def get_key_from_decimal(num,length):
+	''' 
+	Function to convert a decimal to a key of a given length
+	'''
+	bstr = convert_integer_to_bstring(num)
+	key = padding_for_binary(bstr, length)
+	return key
+
+def generate_random_bv_circuit(num_qregs,hidden_key,fname):
+	'''
+	Function to create a random bv circuit for a given input size and hidden bitstring
+	'''
+#	workload_dir = './workloads/bv/'
+#	if not os.path.exists(workload_dir):
+#		os.makedirs(workload_dir)
+#	fname = workload_dir + 'bv'+str(num_qregs)+'_hidden_key_'+str(hidden_key)+'.qasm'
+	f = open(fname,"w+")
+	# dump the qreg and creg information
+	include_str = 'OPENQASM 2.0;\n'
+	f.write(include_str)
+	include_str = 'include "qelib1.inc";\n'
+	f.write(include_str)
+	include_str = 'qreg q[' + str(num_qregs) + '];\n'
+	f.write(include_str)
+	include_str = 'creg c[' + str(num_qregs-1) + '];\n'
+	f.write(include_str)
+	# generate the h gates 
+	for i in range(num_qregs-1):
+		h_str = 'h q[' + str(i) + '];\n'
+		f.write(h_str)
+	# take the ancilla qubit to |-> state
+	ancilla_str = 'x q[' + str(num_qregs-1) + '];\n'
+	f.write(ancilla_str)
+	ancilla_str = 'h q[' + str(num_qregs-1) + '];\n'
+	f.write(ancilla_str)
+	# generate the bitstring for the given key
+	hidden_bitstring = get_key_from_decimal(num=hidden_key,length= num_qregs-1)
+	#print(hidden_bitstring)
+	# generate the cnot gates
+	for c in range(len(hidden_bitstring)):
+		if(hidden_bitstring[c] == '1'):
+			cx_str = 'cx q[' + str(c) + '], q[' + str(num_qregs-1) + '];\n'   
+			f.write(cx_str) #print(cx_str)
+	for i in range(num_qregs-1):
+		h_str = 'h q[' + str(i) + '];\n'
+		f.write(h_str)
+	# dump the measurement operations
+	for i in range(num_qregs-1):
+		meas_str = 'measure q[' + str(i) + '] -> c[' + str(i) + '];\n'
+		f.write(meas_str)
+	f.close()
 
 def figure1_circ(filename):
     cmap = CouplingMap.from_ring(6)

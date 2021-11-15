@@ -250,9 +250,9 @@ class ForeSight(TransformationPass):
                 tmp_pl_view.popleft()
                 tmp_sl_view.popleft()
 
-                next_solution_cap = 1
-                if len(next_solutions) > 2:
-                    kept_soln_indices = np.random.choice(np.arange(len(next_solutions)), size=1)  
+                next_solution_cap = int(np.ceil(np.log2(self.solution_cap) + 1))
+                if len(next_solutions) > 2*next_solution_cap:
+                    kept_soln_indices = np.random.choice(np.arange(len(next_solutions)), size=next_solution_cap)  
                     next_solutions = [next_solutions[k] for k in kept_soln_indices]
                 solutions = next_solutions
             return solutions

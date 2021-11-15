@@ -66,6 +66,8 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
         benchmark_folder, benchmark_suite = G_QAOA_3RL
     elif dataset == 'qaoa3rvl':
         benchmark_folder, benchmark_suite = G_QAOA_3RVL
+    elif dataset == 'bvvl':
+        benchmark_folder, benchmark_suite = G_BV_VL
 
     used_benchmarks = []
     for qb_file in benchmark_suite:
@@ -87,33 +89,34 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
             circ.remove_final_measurements()
 
             # Collect results from A* search
-            print('\t\t(A* start.)')
-            qmap_start = timer()
-            tracemalloc.start(25)
-            qmap_res = qmap.compile(
-                circ,
-                arch=arch_file,
-                method=qmap.Method.heuristic
-                #method=qmap.Method.exact
-            )
-            ss = tracemalloc.take_snapshot()
-            qmap_end = timer()
-            tracemalloc.stop()
-            print('\t\t(A* done.)')
-            # Benchmark A* search
-            qmap_circ = QuantumCircuit.from_qasm_str(qmap_res['mapped_circuit']['qasm'])
-            qmap_circ.global_phase = circ.global_phase
-            qmap_circ = qmap_pass.run(qmap_circ)  # Compile gates to basis gates.
-            benchmark_results['A* CNOTs'] = qmap_circ.count_ops()['cx']
-            benchmark_results['A* Depth'] = qmap_circ.depth()
-            benchmark_results['A* Time'] = qmap_end - qmap_start
-            benchmark_results['A* Memory'] = sum(stat.size for stat in ss.statistics('traceback'))/1024.0
-        except (QiskitError, KeyError) as error:
-            print('\t\t(A* failure)')
-            benchmark_results['A* CNOTs'] = 0
+            benchmark_results['A* CNOTs'] = 0  # init in case we skip A* or an error occurs
             benchmark_results['A* Depth'] = 0
             benchmark_results['A* Time'] = 0
             benchmark_results['A* Memory'] = 0
+            if 'vl' not in dataset:
+                print('\t\t(A* start.)')
+                qmap_start = timer()
+                tracemalloc.start(25)
+                qmap_res = qmap.compile(
+                    circ,
+                    arch=arch_file,
+                    method=qmap.Method.heuristic
+                    #method=qmap.Method.exact
+                )
+                ss = tracemalloc.take_snapshot()
+                qmap_end = timer()
+                tracemalloc.stop()
+                print('\t\t(A* done.)')
+                # Benchmark A* search
+                qmap_circ = QuantumCircuit.from_qasm_str(qmap_res['mapped_circuit']['qasm'])
+                qmap_circ.global_phase = circ.global_phase
+                qmap_circ = qmap_pass.run(qmap_circ)  # Compile gates to basis gates.
+                benchmark_results['A* CNOTs'] = qmap_circ.count_ops()['cx']
+                benchmark_results['A* Depth'] = qmap_circ.depth()
+                benchmark_results['A* Time'] = qmap_end - qmap_start
+                benchmark_results['A* Memory'] = sum(stat.size for stat in ss.statistics('traceback'))/1024.0
+        except (QiskitError, KeyError) as error:
+            print('\t\t(A* failure)')
             
         if benchmark_results['SABRE CNOTs'] == -1:
             print('\tN/A')

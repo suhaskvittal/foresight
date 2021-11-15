@@ -77,6 +77,7 @@ G_ZULEHNER = _get_qasm_files('benchmarks/zulehner')
 G_QAOA_SK = _get_qasm_files('benchmarks/qaoa_sk')
 G_QAOA_3RL = _get_qasm_files('benchmarks/qaoa_3r_large')
 G_QAOA_3RVL = _get_qasm_files('benchmarks/qaoa_3r_vlarge')
+G_BV_VL = _get_qasm_files('benchmarks/bv_vlarge')
 
 # ALGORITHM PARAMETERS
 G_FORESIGHT_SOLN_CAP = 32

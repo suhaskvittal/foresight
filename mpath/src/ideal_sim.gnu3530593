@@ -1,0 +1,4 @@
+1	atl1-1-02-002-12-l.pace.gatech.edu	1636939732.900	   991.822	0	8392	255	0	./jobs/base/benchmark.sh zulehner aspen9 1 
+2	atl1-1-02-002-12-l.pace.gatech.edu	1636939733.118	   991.605	0	192	255	0	./jobs/base/benchmark.sh zulehner weber 1
+3	atl1-1-02-002-12-l.pace.gatech.edu	1636939733.350	   991.374	0	8397	255	0	./jobs/base/benchmark.sh zulehner tokyo 1
+4	atl1-1-02-002-12-l.pace.gatech.edu	1636939733.581	   991.143	0	8391	255	0	./jobs/base/benchmark.sh zulehner toronto 1
