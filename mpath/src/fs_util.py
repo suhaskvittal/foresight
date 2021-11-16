@@ -46,19 +46,20 @@ G_QISKIT_GATE_SET = ['u1', 'u2', 'u3', 'cx']
 G_QASMBENCH_MEDIUM = [
     'adder_n10',        # single adder
 #    'qft_n15',
-    'dnn_n8',           # quantum deep neural net
-    'cc_n12',           # counterfeit coin
-    'multiplier_n15',   # binary multiplier
-    'qf21_n15',         # quantum phase estimation, factor 21           
-    'sat_n11',      
-    'seca_n11',         # shor's error correction
+#    'dnn_n8',           # quantum deep neural net
+#    'cc_n12',           # counterfeit coin
+    'multiply_n13',
+#    'multiplier_n15',   # binary multiplier
+#    'qf21_n15',         # quantum phase estimation, factor 21           
+#    'sat_n11',      
+#    'seca_n11',         # shor's error correction
     'bv_n14',           # bernstein-vazirani algorithm 
-    'ising_n10',        # ising gate sim
+#    'ising_n10',        # ising gate sim
     'qaoa_n6',          
     'qpe_n9',           # quantum phase estimation
     'simon_n6',         # simon's algorithm 
-    'vqe_uccsd_n6',
-    'vqe_uccsd_n8'
+#    'vqe_uccsd_n6',
+#    'vqe_uccsd_n8'
 ]
 G_QASMBENCH_LARGE = [
     'bigadder_n18',     # ripple carry adder    
