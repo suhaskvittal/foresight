@@ -80,10 +80,12 @@ class BenchmarkPass(AnalysisPass):
         self.benchmark_results = None
     
     def run(self, dag):
+        self.benchmark_results = defaultdict(float)
+
         original_circuit = dag_to_circuit(dag)
         circ_cx = original_circuit.count_ops()['cx']
+        self.benchmark_results['Original CNOTs'] = circ_cx
 
-        self.benchmark_results = defaultdict(float)
         print('\tBenchmark Logging:')
         print('\t\tsize, depth =', dag.size(), dag.depth())
 
