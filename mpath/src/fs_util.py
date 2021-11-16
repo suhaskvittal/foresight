@@ -48,16 +48,16 @@ G_QASMBENCH_MEDIUM = [
 #    'qft_n15',
 #    'dnn_n8',           # quantum deep neural net
 #    'cc_n12',           # counterfeit coin
-#    'multiply_n13',
-#    'multiplier_n15',   # binary multiplier
+    'multiply_n13',
+    'multiplier_n15',   # binary multiplier
 #    'qf21_n15',         # quantum phase estimation, factor 21           
-#    'sat_n11',      
-#    'seca_n11',         # shor's error correction
+    'sat_n11',      
+    'seca_n11',         # shor's error correction
     'bv_n14',           # bernstein-vazirani algorithm 
 #    'ising_n10',        # ising gate sim
-    'qaoa_n6',          
-    'qpe_n9',           # quantum phase estimation
-    'simon_n6',         # simon's algorithm 
+#    'qaoa_n6',          
+#    'qpe_n9',           # quantum phase estimation
+#    'simon_n6',         # simon's algorithm 
 #    'vqe_uccsd_n6',
 #    'vqe_uccsd_n8'
 ]
@@ -79,6 +79,7 @@ G_QAOA_SK = _get_qasm_files('benchmarks/qaoa_sk')
 G_QAOA_3RL = _get_qasm_files('benchmarks/qaoa_3r_large')
 G_QAOA_3RVL = _get_qasm_files('benchmarks/qaoa_3r_vlarge')
 G_BV_VL = _get_qasm_files('benchmarks/bv_vlarge')
+G_BV_8to15 = _get_qasm_files('benchmarks/bv_8-15')
 
 # ALGORITHM PARAMETERS
 G_FORESIGHT_SOLN_CAP = 32

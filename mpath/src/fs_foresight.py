@@ -407,16 +407,16 @@ class ForeSight(TransformationPass):
                 p0, p1 = test_layout[q0], test_layout[q1]
                 num_ops += 1
                 s = self.distance_matrix[p0][p1]
-                p = 1
+                p = 0
                 if self.vertex_weights:
                     # Modify with vertex weights
-                    p *= np.exp(10*(self.vertex_weights[p0]+self.vertex_weights[p1]))
+                    p += 2*(self.vertex_weights[p0]+self.vertex_weights[p1])
                 if self.readout_weights:
                     # Modify with readout weights
                     max_post_layer_size = np.ceil(10*self.mean_degree)
-                    p *= np.exp(10*(self.readout_weights[p0]+self.readout_weights[p1])
+                    p += np.exp(10*(self.readout_weights[p0]+self.readout_weights[p1])
                         *(max_post_layer_size-len(post_primary_layer_view))/max_post_layer_size)
-                sub_sum += s*p
+                sub_sum += s+0.5*p
             if self.depth_min:  
                 dist += sub_sum
             else:
@@ -425,8 +425,9 @@ class ForeSight(TransformationPass):
             return 0
         else:
             dist = dist/num_ops
+            soln_size = soln_size*np.min(self.distance_matrix)
             if self.depth_min:
-                return depth + soln_size
+                return dist + soln_size
             else:
-                return dist+soln_size*np.exp(-(num_ops/self.mean_degree)**2)
+                return dist+soln_size*np.exp(-(num_ops/self.mean_degree)**2)  # scale down
 

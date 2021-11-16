@@ -42,11 +42,11 @@ class BenchmarkPass(AnalysisPass):
         self.simulate = kwargs['sim']
         if kwargs['noisy']:
             self.noise_model, edge_weights, vertex_weights, readout_weights = kwargs['noise_model']
-            slack = 0.0005
+            slack = G_FORESIGHT_SLACK*np.mean([edge_weights[e] for e in edge_weights])
         else:
             self.noise_model = None
             edge_weights, vertex_weights, readout_weights = None,None,None
-            slack = G_FORESIGHT_SOLN_CAP
+            slack = G_FORESIGHT_SLACK
         self.measure_memory = kwargs['mem']
 
         self.basis_gates = G_QISKIT_GATE_SET
@@ -111,8 +111,6 @@ class BenchmarkPass(AnalysisPass):
             # Get initial layout.
             circ = original_circuit.copy()
             circ = self.layout_pass.run(circ)
-            if self.simulate:  # Ideal simulation
-                ideal_counts = exec_sim(circ, basis_gates=self.basis_gates) 
             # Run dag on both passes. 
             # SABRE
             if 'sabre' in self.benchmark_list:
@@ -133,10 +131,6 @@ class BenchmarkPass(AnalysisPass):
                     self.benchmark_results['SABRE Time'] = (end - start)
                     if self.measure_memory:
                         self.benchmark_results['SABRE Memory'] = sum(stat.size for stat in ss.statistics('traceback'))/1024.0
-                    # Get fidelity
-                    if self.simulate:
-                        sabre_counts = exec_sim(sabre_circ, basis_gates=self.basis_gates, noise_model=self.noise_model) 
-                        self.benchmark_results['SABRE TVD'] = total_variation_distance(ideal_counts, sabre_counts)
                 print('\t\t(sabre done.)')
             # ForeSight
             if 'foresight' in self.benchmark_list:
@@ -157,9 +151,6 @@ class BenchmarkPass(AnalysisPass):
                     self.benchmark_results['ForeSight Time'] = (end - start)
                     if self.measure_memory:
                         self.benchmark_results['ForeSight Memory'] = sum(stat.size for stat in ss.statistics('traceback'))/1024.0
-                    if self.simulate:
-                        foresight_counts = exec_sim(foresight_circ, basis_gates=self.basis_gates, noise_model=self.noise_model) 
-                        self.benchmark_results['ForeSight TVD'] = total_variation_distance(ideal_counts, foresight_counts)
                 print('\t\t(foresight done.)')
             if 'ssonly' in self.benchmark_list:
                 print('\t\t(ssonly start.)')
@@ -179,10 +170,18 @@ class BenchmarkPass(AnalysisPass):
                     self.benchmark_results['ForeSight SSOnly Time'] = end - start
                     if self.measure_memory:
                         self.benchmark_results['ForeSight SSOnly Memory'] = sum(stat.size for stat in ss.statistics('traceback'))/1024.0
-                    if self.simulate:
-                        ssonly_counts = exec_sim(ssonly_circ, basis_gates=self.basis_gates, noise_model=self.noise_model) 
-                        self.benchmark_results['ForeSight SSOnly TVD'] = total_variation_distance(ideal_counts, ssonly_counts)
                 print('\t\t(ssonly done).')
+        if self.simulate:
+            # original
+            ideal_counts = exec_sim(circ, basis_gates=self.basis_gates) 
+            # SABRE
+            sabre_counts = exec_sim(sabre_circ, basis_gates=self.basis_gates, noise_model=self.noise_model) 
+            self.benchmark_results['SABRE TVD'] = total_variation_distance(ideal_counts, sabre_counts)
+            # Foresight
+            foresight_counts = exec_sim(foresight_circ, basis_gates=self.basis_gates, noise_model=self.noise_model) 
+            self.benchmark_results['ForeSight TVD'] = total_variation_distance(ideal_counts, foresight_counts)
+            # Relative
+            self.benchmark_results['Relative TVD'] = self.benchmark_results['ForeSight TVD'] / self.benchmark_results['SABRE TVD']
         # Some circuit statistics as well.
         if self.compute_stats:
             layer_view_pass = LayerViewPass()
