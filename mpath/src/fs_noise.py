@@ -69,7 +69,9 @@ def google_weber_noise_model():
         coh_t1,
         coh_t2,
         warnings=False,
-        use_readout=False
+        use_1qerror=False,
+        use_readout=False,
+        use_coherence=False
     )
     # Build edge weights for ForeSight
     edge_weights = {}
@@ -79,7 +81,7 @@ def google_weber_noise_model():
         else:
             e = g_2q_err['cx'][(j,i)]
         # Log weighting maintains product property
-        edge_weights[(i,j)] = -np.log(1-e)
+        edge_weights[(i,j)] = np.e/-np.log(e) 
     # Build vertex weights and readout weights for ForeSight
     vertex_weights = {}
     readout_weights = {}
@@ -90,7 +92,7 @@ def google_weber_noise_model():
         mean_mse = 0.5*(prob_m1_g0[i] + prob_m0_g1[i])
         vertex_weights[i] = mean_1qe 
         readout_weights[i] = mean_mse
-    return noise_model, edge_weights, vertex_weights, None#readout_weights
+    return noise_model, None,None,None#edge_weights, vertex_weights, readout_weights
 
 def _build_noise_model(
     num_qubits, 
@@ -107,7 +109,8 @@ def _build_noise_model(
     warnings=False,
     use_2qerror=True,
     use_1qerror=True,
-    use_readout=True
+    use_readout=True,
+    use_coherence=True
 ):
     noise_model = NoiseModel() 
     if use_1qerror:
@@ -117,9 +120,10 @@ def _build_noise_model(
                 # Gate error
                 e = depolarizing_error(g_1q_err[gate][i], 1)
                 noise_model.add_quantum_error(e, [gate], [i], warnings=warnings) 
-                # Coherence error
-                e = thermal_relaxation_error(coh_t1[i], coh_t2[i], g_1q_time[gate][i])
-                noise_model.add_quantum_error(e, [gate], [i], warnings=warnings)
+                if use_coherence:
+                    # Coherence error
+                    e = thermal_relaxation_error(coh_t1[i], coh_t2[i], g_1q_time[gate][i])
+                    noise_model.add_quantum_error(e, [gate], [i], warnings=warnings)
     if use_2qerror:
         # Add double qubit error
         for (i, j) in coupling_map.get_edges():
@@ -127,10 +131,11 @@ def _build_noise_model(
                 # Gate error
                 e = depolarizing_error(g_2q_err[gate][(i,j)], 2)
                 noise_model.add_quantum_error(e, [gate], [i,j], warnings=warnings)
-                # Coherence error
-                e = thermal_relaxation_error(coh_t1[i], coh_t2[i], g_2q_time[gate][(i,j)]).expand(
-                        thermal_relaxation_error(coh_t1[j], coh_t2[j], g_2q_time[gate][(i,j)]))
-                noise_model.add_quantum_error(e, [gate], [i,j], warnings=warnings)
+                if use_coherence:
+                    # Coherence error
+                    e = thermal_relaxation_error(coh_t1[i], coh_t2[i], g_2q_time[gate][(i,j)]).expand(
+                            thermal_relaxation_error(coh_t1[j], coh_t2[j], g_2q_time[gate][(i,j)]))
+                    noise_model.add_quantum_error(e, [gate], [i,j], warnings=warnings)
     if use_readout:
         # Add measurement errors
         for i in range(num_qubits):
@@ -139,9 +144,10 @@ def _build_noise_model(
             p01 = _truncate(prob_m0_g1[i], 3)  # P(measure 0 given 1)
             e = ReadoutError([[1 - p10, p10], [p01, 1 - p01]])
             noise_model.add_readout_error(e, [i], warnings=warnings)
-            # Coherence error
-            e = thermal_relaxation_error(coh_t1[i], coh_t2[i], meas_time[i])
-            noise_model.add_quantum_error(e, ['measure'], [i], warnings=warnings)
+            if use_coherence:
+                # Coherence error
+                e = thermal_relaxation_error(coh_t1[i], coh_t2[i], meas_time[i])
+                noise_model.add_quantum_error(e, ['measure'], [i], warnings=warnings)
     return noise_model
 
 def _truncate(n, decimals=0):

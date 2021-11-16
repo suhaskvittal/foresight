@@ -42,7 +42,7 @@ class BenchmarkPass(AnalysisPass):
         self.simulate = kwargs['sim']
         if kwargs['noisy']:
             self.noise_model, edge_weights, vertex_weights, readout_weights = kwargs['noise_model']
-            slack = G_FORESIGHT_SLACK*np.mean([edge_weights[e] for e in edge_weights])
+            slack = G_FORESIGHT_SLACK
         else:
             self.noise_model = None
             edge_weights, vertex_weights, readout_weights = None,None,None
