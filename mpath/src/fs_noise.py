@@ -87,8 +87,8 @@ def google_weber_noise_model():
             g_1q_err[g][i] for g in g_1q_err
         ])
         mean_mse = 0.5*(prob_m1_g0[i] + prob_m0_g1[i])
-        vertex_weights[i] = -np.log(1.001-mean_1qe) 
-        readout_weights[i] = -np.log(1.001-mean_mse)
+        vertex_weights[i] = mean_1qe 
+        readout_weights[i] = mean_mse
     return noise_model, edge_weights, vertex_weights, readout_weights
 
 def _build_noise_model(

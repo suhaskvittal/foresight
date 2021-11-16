@@ -172,7 +172,6 @@ class ForeSight(TransformationPass):
                 output_layer_deque.extendleft(list(curr.obj_data)[::-1])
                 curr = curr.parent
             min_solutions.append((layout, output_layer_deque, leaf_sum))
-
         return self.deep_solve(primary_layer_view, secondary_layer_view, min_solutions, canonical_register)
                 
     def shallow_solve(
@@ -408,14 +407,16 @@ class ForeSight(TransformationPass):
                 p0, p1 = test_layout[q0], test_layout[q1]
                 num_ops += 1
                 s = self.distance_matrix[p0][p1]
+                p = 1
                 if self.vertex_weights:
                     # Modify with vertex weights
-                    s = s * np.exp(self.vertex_weights[p0]+self.vertex_weights[p1])
+                    p *= np.exp(10*(self.vertex_weights[p0]+self.vertex_weights[p1]))
                 if self.readout_weights:
                     # Modify with readout weights
                     max_post_layer_size = np.ceil(10*self.mean_degree)
-                    s = s * np.exp((self.readout_weights[p0]+self.readout_weights[p1])*(30-max_post_layer_size)/30)
-                
+                    p *= np.exp(10*(self.readout_weights[p0]+self.readout_weights[p1])
+                        *(max_post_layer_size-len(post_primary_layer_view))/max_post_layer_size)
+                sub_sum += s*p
             if self.depth_min:  
                 dist += sub_sum
             else:
