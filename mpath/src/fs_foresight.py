@@ -21,7 +21,16 @@ from copy import copy, deepcopy
 from collections import deque
 
 class ForeSight(TransformationPass):
-    def __init__(self, coupling_map, slack=2, solution_cap=32, edge_weights=None, depth_minimize=False, debug=False):
+    def __init__(self,
+        coupling_map, 
+        slack=2,
+        solution_cap=32,
+        edge_weights=None,
+        vertex_weights=None,
+        readout_weights=None,
+        depth_minimize=False,
+        debug=False
+    ):
         super().__init__()
 
         self.slack = slack
@@ -34,6 +43,11 @@ class ForeSight(TransformationPass):
 
         self.fake_run = False
         self.debug = debug
+
+        # initialize weights
+        self.edge_weights = edge_weights
+        self.vertex_weights = vertex_weights
+        self.readout_weights = readout_weights
             
     def run(self, dag):
         mapped_dag = dag._copy_circuit_metadata()
@@ -391,8 +405,17 @@ class ForeSight(TransformationPass):
             sub_sum = 0.0
             for node in post_layer:
                 q0, q1 = node.qargs
+                p0, p1 = test_layout[q0], test_layout[q1]
                 num_ops += 1
-                sub_sum += self.distance_matrix[test_layout[q0]][test_layout[q1]]
+                s = self.distance_matrix[p0][p1]
+                if self.vertex_weights:
+                    # Modify with vertex weights
+                    s = s * np.exp(self.vertex_weights[p0]+self.vertex_weights[p1])
+                if self.readout_weights:
+                    # Modify with readout weights
+                    max_post_layer_size = np.ceil(10*self.mean_degree)
+                    s = s * np.exp((self.readout_weights[p0]+self.readout_weights[p1])*(30-max_post_layer_size)/30)
+                
             if self.depth_min:  
                 dist += sub_sum
             else:
