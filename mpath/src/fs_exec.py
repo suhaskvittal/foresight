@@ -12,10 +12,12 @@ from qiskit import Aer
 
 import numpy as np
 
+from fs_util import G_QISKIT_GATE_SET
+
 from timeit import default_timer as timer
 from sys import argv
 
-IDEAL_SIMULATOR = Aer.get_backend('qasm_simulator')
+SIMULATOR = Aer.get_backend('qasm_simulator')
 DEFAULT_SHOTS = 8192
 
 def draw(circ):
@@ -25,10 +27,15 @@ def _pad_circuit_to_fit(circ, coupling_map):
     while circ.num_qubits < coupling_map.size():
         circ.add_bits([Qubit()])
 
-def exec_ideal(circ, shots=DEFAULT_SHOTS):
+def exec_sim(circ, shots=DEFAULT_SHOTS, basis_gates=G_QISKIT_GATE_SET, noise_model=None):
     if 'measure' not in circ.count_ops():
         circ.measure_active()
-    job = IDEAL_SIMULATOR.run(circ, shots=shots)
+    job = SIMULATOR.run(
+        circ,
+        shots=shots,
+        basis_gates=basis_gates,
+        noise_model=noise_model
+    )
     return job.result().get_counts(circ)
     
 def total_variation_distance(counts1, counts2, shots=DEFAULT_SHOTS):

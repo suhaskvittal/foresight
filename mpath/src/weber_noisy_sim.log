@@ -1,0 +1,72 @@
+---------------------------------------
+Begin PBS Prologue Mon Nov 15 13:14:20 EST 2021
+Job ID:     3534032.sched-torque.pace.gatech.edu
+User ID:    svittal8
+Job name:   weber_noisy_sim
+Queue:      inferno
+End PBS Prologue Mon Nov 15 13:14:20 EST 2021
+---------------------------------------
+cwd:/storage/coda1/p-mqureshi4/0/svittal8/foresight/routing/mpath/src
+Config:
+	workload=medium, backend=weber, runs=1
+	flags=--nomem
+	output directory=noisy_sim_results/2021Nov15_13:14:21/medium
+---------------------------------------
+Begin PBS Epilogue Mon Nov 15 13:14:22 EST 2021
+Job ID:     3534032.sched-torque.pace.gatech.edu
+User ID:    svittal8
+Job name:   weber_noisy_sim
+Resources:  nodes=1:ppn=8,pmem=16gb,walltime=12:00:00,neednodes=1:ppn=8
+Rsrc Used:  cput=00:00:00,vmem=0kb,walltime=00:00:02,mem=0kb,energy_used=0
+Queue:      inferno
+Nodes:     
+atl1-1-03-004-1-l.pace.gatech.edu
+End PBS Epilogue Mon Nov 15 13:14:22 EST 2021
+---------------------------------------
+---------------------------------------
+Begin PBS Prologue Mon Nov 15 13:15:24 EST 2021
+Job ID:     3534037.sched-torque.pace.gatech.edu
+User ID:    svittal8
+Job name:   weber_noisy_sim
+Queue:      inferno
+End PBS Prologue Mon Nov 15 13:15:24 EST 2021
+---------------------------------------
+cwd:/storage/coda1/p-mqureshi4/0/svittal8/foresight/routing/mpath/src
+Config:
+	workload=medium, backend=weber, runs=1
+	flags=--nomem
+	output directory=noisy_sim_results/2021Nov15_13:15:24/medium
+/storage/coda1/p-mqureshi4/0/svittal8/foresight/routing/mpath/src/venv/lib64/python3.6/site-packages/qiskit/__init__.py:66: DeprecationWarning: Using Qiskit with Python 3.6 is deprecated as of qiskit-terra 0.17.0. Support for running Qiskit with Python 3.6 will be removed in qiskit-terra 0.20.0.
+  DeprecationWarning,
+Traceback (most recent call last):
+  File "fs_benchmark.py", line 21, in <module>
+    from fs_noise import * 
+  File "/storage/coda1/p-mqureshi4/0/svittal8/foresight/routing/mpath/src/fs_noise.py", line 133
+    e = ReadoutError([[1 - p10, p10], [p01, 1 - p01])
+                                                    ^
+SyntaxError: invalid syntax
+---------------------------------------
+Begin PBS Epilogue Mon Nov 15 13:16:17 EST 2021
+Job ID:     3534037.sched-torque.pace.gatech.edu
+User ID:    svittal8
+Job name:   weber_noisy_sim
+Resources:  nodes=1:ppn=8,pmem=16gb,walltime=12:00:00,neednodes=1:ppn=8
+Rsrc Used:  cput=00:00:04,vmem=2448232kb,walltime=00:00:53,mem=102624kb,energy_used=0
+Queue:      inferno
+Nodes:     
+atl1-1-03-004-1-l.pace.gatech.edu
+End PBS Epilogue Mon Nov 15 13:16:17 EST 2021
+---------------------------------------
+---------------------------------------
+Begin PBS Prologue Mon Nov 15 18:07:45 EST 2021
+Job ID:     3536552.sched-torque.pace.gatech.edu
+User ID:    svittal8
+Job name:   weber_noisy_sim
+Queue:      inferno
+End PBS Prologue Mon Nov 15 18:07:45 EST 2021
+---------------------------------------
+cwd:/storage/coda1/p-mqureshi4/0/svittal8/foresight/routing/mpath/src
+Config:
+	workload=medium, backend=weber, runs=1
+	flags=--nomem
+	output directory=noisy_sim_results/2021Nov15_18:07:45/medium

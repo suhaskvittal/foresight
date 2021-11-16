@@ -411,7 +411,7 @@ class ForeSight(TransformationPass):
                 if self.vertex_weights:
                     # Modify with vertex weights
                     s = s * np.exp(self.vertex_weights[p0]+self.vertex_weights[p1])
-                if self.readout_weights;
+                if self.readout_weights:
                     # Modify with readout weights
                     max_post_layer_size = np.ceil(10*self.mean_degree)
                     s = s * np.exp((self.readout_weights[p0]+self.readout_weights[p1])*(30-max_post_layer_size)/30)

@@ -18,6 +18,7 @@ from copy import copy, deepcopy
 from fs_layerview import LayerViewPass
 from fs_exec import _pad_circuit_to_fit, draw
 from fs_util import *
+from fs_noise import * 
 from fs_benchmark_pass import BenchmarkPass
 
 from jkq import qmap
@@ -75,7 +76,7 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
             circ = QuantumCircuit.from_qasm_file('benchmarks/qasmbench/%s/%s/%s.qasm' % (dataset, qb_file, qb_file))    
         else:
             circ = QuantumCircuit.from_qasm_file('%s/%s' % (benchmark_folder, qb_file))
-        if circ.depth() > 3000:
+        if circ.depth() > 2000:
             continue
         used_benchmarks.append(qb_file)
         print('[%s]' % qb_file)
@@ -137,13 +138,19 @@ if __name__ == '__main__':
     
     benchmark_kwargs = {
         'sim': True,
-        'debug': False
+        'debug': False,
+        'noisy': False,
+        'mem': True
     }
     if len(argv) > 5:
         if '--nosim' in argv:
             benchmark_kwargs['sim'] = False
         if '--debug' in argv:
             benchmark_kwargs['debug'] = True
+        if '--noisy' in argv:
+            benchmark_kwargs['noisy'] = True
+        if '--nomem' in argv:
+            benchmark_kwargs['mem'] = False
 
     print('Config:\n\tmode: %s\n\tcoupling style: %s\n\truns: %d'
             % (mode, coupling_style, runs))
@@ -154,6 +161,8 @@ if __name__ == '__main__':
     elif coupling_style == 'weber':
         coupling_map = G_GOOGLE_WEBER
         arch_file = 'arch/google_weber.arch'
+        if benchmark_kwargs['noisy']:
+            benchmark_kwargs['noise_model'] = google_weber_noise_model()
     elif coupling_style == 'aspen9':
         coupling_map = G_RIGETTI_ASPEN9
         arch_file = 'arch/rigetti_aspen9.arch'

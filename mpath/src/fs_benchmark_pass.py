@@ -15,7 +15,7 @@ from copy import copy, deepcopy
 
 from fs_layerview import LayerViewPass
 from fs_foresight import ForeSight
-from fs_exec import exec_ideal, total_variation_distance
+from fs_exec import exec_sim, total_variation_distance
 from fs_util import _compute_per_layer_density_2q,\
                     _compute_child_distance_2q,\
                     _compute_size_depth_ratio_2q,\
@@ -38,7 +38,19 @@ class BenchmarkPass(AnalysisPass):
     ):
         super().__init__()
 
-        self.sim = kwargs['sim']
+        # Parse kwargs
+        self.simulate = kwargs['sim']
+        if kwargs['noisy']:
+            self.noise_model, edge_weights, vertex_weights, readout_weights = kwargs['noise_model']
+            slack = 0.0005
+        else:
+            self.noise_model = None
+            edge_weights, vertex_weights, readout_weights = None,None,None
+            slack = G_FORESIGHT_SOLN_CAP
+        self.measure_memory = kwargs['mem']
+
+        self.basis_gates = G_QISKIT_GATE_SET
+
         # Set up routers
         self.benchmark_list = compare
         self.mapping_policy = SabreLayout(coupling_map, 
@@ -46,28 +58,34 @@ class BenchmarkPass(AnalysisPass):
         self.sabre_router = SabreSwap(coupling_map, heuristic='decay')
         self.foresight_router = ForeSight(
                 coupling_map,
-                slack=G_FORESIGHT_SLACK,
+                slack=slack,
                 solution_cap=G_FORESIGHT_SOLN_CAP,
-                debug=kwargs['debug']
+                debug=kwargs['debug'],
+                edge_weights=edge_weights,
+                vertex_weights=vertex_weights,
+                readout_weights=readout_weights
         )
         self.foresight_ssonly_router = ForeSight(
                 coupling_map,
-                slack=G_FORESIGHT_SLACK,
+                slack=slack,
                 solution_cap=1,
-                debug=kwargs['debug']
+                debug=kwargs['debug'],
+                edge_weights=edge_weights,
+                vertex_weights=vertex_weights,
+                readout_weights=readout_weights
         )
         # Set up passes
         self.sabre_pass = PassManager([
             self.sabre_router,
-            Unroller(G_QISKIT_GATE_SET)
+            Unroller(self.basis_gates)
         ])
         self.foresight_pass = PassManager([
             self.foresight_router,
-            Unroller(G_QISKIT_GATE_SET)
+            Unroller(self.basis_gates)
         ])
         self.foresight_ssonly_pass = PassManager([
             self.foresight_ssonly_router,
-            Unroller(G_QISKIT_GATE_SET)
+            Unroller(self.basis_gates)
         ])
         # Layout pass
         self.layout_pass = PassManager([
@@ -91,64 +109,76 @@ class BenchmarkPass(AnalysisPass):
             # Get initial layout.
             circ = original_circuit.copy()
             circ = self.layout_pass.run(circ)
-            if self.sim:
-                ideal_counts = exec_ideal(circ) 
+            if self.simulate:  # Ideal simulation
+                ideal_counts = exec_sim(circ, basis_gates=self.basis_gates) 
             # Run dag on both passes. 
             # SABRE
             if 'sabre' in self.benchmark_list:
                 print('\t\t(sabre start.)')
                 start = timer()
-                tracemalloc.start(25)
+                if self.measure_memory:
+                    tracemalloc.start(25)
                 sabre_circ = self.sabre_pass.run(circ)
-                ss = tracemalloc.take_snapshot()
+                if self.measure_memory:
+                    ss = tracemalloc.take_snapshot()
                 end = timer()
-                tracemalloc.stop()
+                if self.measure_memory:
+                    tracemalloc.stop()
                 sabre_cnots = sabre_circ.count_ops()['cx']
                 if r == 0 or self.benchmark_results['SABRE CNOTs'] > sabre_cnots:
                     self.benchmark_results['SABRE CNOTs'] = sabre_cnots
                     self.benchmark_results['SABRE Depth'] = (sabre_circ.depth())
                     self.benchmark_results['SABRE Time'] = (end - start)
-                    self.benchmark_results['SABRE Memory'] = sum(stat.size for stat in ss.statistics('traceback'))/1024.0
+                    if self.measure_memory:
+                        self.benchmark_results['SABRE Memory'] = sum(stat.size for stat in ss.statistics('traceback'))/1024.0
                     # Get fidelity
-                    if self.sim:
-                        sabre_counts = exec_ideal(sabre_circ) 
+                    if self.simulate:
+                        sabre_counts = exec_sim(sabre_circ, basis_gates=self.basis_gates, noise_model=self.noise_model) 
                         self.benchmark_results['SABRE TVD'] = total_variation_distance(ideal_counts, sabre_counts)
                 print('\t\t(sabre done.)')
             # ForeSight
             if 'foresight' in self.benchmark_list:
                 print('\t\t(foresight start.)')
                 start = timer()
-                tracemalloc.start(25)
+                if self.measure_memory:
+                    tracemalloc.start(25)
                 foresight_circ = self.foresight_pass.run(circ)
-                ss = tracemalloc.take_snapshot()
+                if self.measure_memory:
+                    ss = tracemalloc.take_snapshot()
                 end = timer()
-                tracemalloc.stop()
+                if self.measure_memory:
+                    tracemalloc.stop()
                 foresight_cnots = foresight_circ.count_ops()['cx']
                 if r == 0 or self.benchmark_results['ForeSight CNOTs'] > foresight_cnots:
                     self.benchmark_results['ForeSight CNOTs'] = foresight_cnots
                     self.benchmark_results['ForeSight Depth'] = (foresight_circ.depth())
                     self.benchmark_results['ForeSight Time'] = (end - start)
-                    self.benchmark_results['ForeSight Memory'] = sum(stat.size for stat in ss.statistics('traceback'))/1024.0
-                    if self.sim:
-                        foresight_counts = exec_ideal(foresight_circ)
+                    if self.measure_memory:
+                        self.benchmark_results['ForeSight Memory'] = sum(stat.size for stat in ss.statistics('traceback'))/1024.0
+                    if self.simulate:
+                        foresight_counts = exec_sim(foresight_circ, basis_gates=self.basis_gates, noise_model=self.noise_model) 
                         self.benchmark_results['ForeSight TVD'] = total_variation_distance(ideal_counts, foresight_counts)
                 print('\t\t(foresight done.)')
             if 'ssonly' in self.benchmark_list:
                 print('\t\t(ssonly start.)')
                 start = timer()
-                tracemalloc.start(25)
+                if self.measure_memory:
+                    tracemalloc.start(25)
                 ssonly_circ = self.foresight_ssonly_pass.run(circ)
-                ss = tracemalloc.take_snapshot()
+                if self.measure_memory:
+                    ss = tracemalloc.take_snapshot()
                 end = timer()
-                tracemalloc.stop()
+                if self.measure_memory:
+                    tracemalloc.stop()
                 ssonly_cnots = ssonly_circ.count_ops()['cx']
                 if r == 0 or self.benchmark_results['ForeSight SSOnly CNOTs'] > ssonly_cnots:
                     self.benchmark_results['ForeSight SSOnly CNOTs'] = ssonly_cnots
                     self.benchmark_results['ForeSight SSOnly Depth'] = ssonly_circ.depth()
                     self.benchmark_results['ForeSight SSOnly Time'] = end - start
-                    self.benchmark_results['ForeSight SSOnly Memory'] = sum(stat.size for stat in ss.statistics('traceback'))/1024.0
-                    if self.sim:
-                        ssonly_counts = exec_ideal(ssonly_circ)
+                    if self.measure_memory:
+                        self.benchmark_results['ForeSight SSOnly Memory'] = sum(stat.size for stat in ss.statistics('traceback'))/1024.0
+                    if self.simulate:
+                        ssonly_counts = exec_sim(ssonly_circ, basis_gates=self.basis_gates, noise_model=self.noise_model) 
                         self.benchmark_results['ForeSight SSOnly TVD'] = total_variation_distance(ideal_counts, ssonly_counts)
                 print('\t\t(ssonly done).')
         # Some circuit statistics as well.

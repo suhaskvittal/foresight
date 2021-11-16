@@ -22,15 +22,15 @@ def google_weber_noise_model():
     CX_TIME = 32 
     MEAS_TIME = 4000
     T1 = 15000
-    T2 = t1//2
+    T2 = T1//2
     # Read noise file.
     noise_file = 'arch/noisy/google_weber.noise'
     reader = open(noise_file, 'r')
     num_qubits = int(reader.readline())
     g_2q_err = {'cx':{}}
     g_2q_time = {'cx':{}}
-    g_1q_err = {g:[0 for _ in range(num_qubits) for g in ['u1', 'u2', 'u3']]}
-    g_1q_time = {g:[0 for _ in range(num_qubits) for g in ['u1', 'u2', 'u3']]}
+    g_1q_err = {g:[0 for _ in range(num_qubits)] for g in ['u1', 'u2', 'u3']}
+    g_1q_time = {g:[0 for _ in range(num_qubits)] for g in ['u1', 'u2', 'u3']}
     prob_m1_g0 = [0 for _ in range(num_qubits)]
     prob_m0_g1 = [0 for _ in range(num_qubits)]
     meas_time = [0 for _ in range(num_qubits)]
@@ -38,7 +38,7 @@ def google_weber_noise_model():
     coh_t2 = [0 for _ in range(num_qubits)]
     for _ in range(num_qubits):
         split_line = reader.readline().split(' ')
-        q, e_1q, pm1g0, pm0g1 = tuple([int(x) for x in split_line])
+        q, e_1q, pm1g0, pm0g1 = int(split_line[0]), float(split_line[1]), float(split_line[2]), float(split_line[3])
         for g in g_1q_err:
             g_1q_err[g][q] = e_1q
             g_1q_time[g][q] = G1Q_TIME
@@ -50,7 +50,7 @@ def google_weber_noise_model():
     line = reader.readline()  # now read until the end of the file
     while line != '':
         split_line = line.split(' ')
-        q1, q2, e_2q = tuple([int(x) for x in split_line])
+        q1, q2, e_2q = int(split_line[0]), int(split_line[1]), float(split_line[2])
         g_2q_err['cx'][(q1,q2)] = e_2q 
         g_2q_err['cx'][(q2,q1)] = e_2q
         g_2q_time['cx'][(q1,q2)] = CX_TIME
@@ -111,29 +111,29 @@ def _build_noise_model(
         for gate in g_1q_err:
             # Gate error
             e = depolarizing_error(g_1q_err[gate][i], 1)
-            noise_model.add_quantum_error(e, [gate.name], [i], warnings=warnings) 
+            noise_model.add_quantum_error(e, [gate], [i], warnings=warnings) 
             # Coherence error
-            e = thermal_relaxation_error(coh_t1[i], coh_t2[i], g_1q_time[gate])
-            noise_model.add_quantum_error(e, [gate.name], [i], warnings=warnings)
+            e = thermal_relaxation_error(coh_t1[i], coh_t2[i], g_1q_time[gate][i])
+            noise_model.add_quantum_error(e, [gate], [i], warnings=warnings)
     # Add double qubit error
     for (i, j) in coupling_map.get_edges():
         for gate in g_2q_err:
             # Gate error
             e = depolarizing_error(g_2q_err[gate][(i,j)], 2)
-            noise_model.add_quantum_error(e, [gate.name], [i,j], warnings=warnings)
+            noise_model.add_quantum_error(e, [gate], [i,j], warnings=warnings)
             # Coherence error
             e = thermal_relaxation_error(coh_t1[i], coh_t2[i], g_2q_time[gate][(i,j)]).expand(
                     thermal_relaxation_error(coh_t1[j], coh_t2[j], g_2q_time[gate][(i,j)]))
-            noise_model.add_quantum_error(e, [gate.name], [i,j], warnings=warnings)
+            noise_model.add_quantum_error(e, [gate], [i,j], warnings=warnings)
     # Add measurement errors
     for i in range(num_qubits):
         # Gate error
-        p10 = truncate(prob_m1_g0[i], 3)  # P(measure 1 given 0)
-        p01 = truncate(prob_m0_g1[i], 3)  # P(measure 0 given 1)
-        e = ReadoutError([[1 - p10, p10], [p01, 1 - p01])
-        noise_model.add_readout_error(error, [i], warnings=warnings)
+        p10 = _truncate(prob_m1_g0[i], 3)  # P(measure 1 given 0)
+        p01 = _truncate(prob_m0_g1[i], 3)  # P(measure 0 given 1)
+        e = ReadoutError([[1 - p10, p10], [p01, 1 - p01]])
+        noise_model.add_readout_error(e, [i], warnings=warnings)
         # Coherence error
-        e = thermal_relaxation_error(coh_t1[i], coh_t2[i], meas_time)
+        e = thermal_relaxation_error(coh_t1[i], coh_t2[i], meas_time[i])
         noise_model.add_quantum_error(e, ['measure'], [i], warnings=warnings)
     return noise_model
 
