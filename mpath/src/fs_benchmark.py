@@ -71,6 +71,10 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
         benchmark_folder, benchmark_suite = G_BV_VL
     elif dataset == 'bv8to15':
         benchmark_folder, benchmark_suite = G_BV_8to15
+    elif dataset == 'bv30to60':
+        benchmark_folder, benchmark_suite = G_BV_30to60
+    elif dataset == 'bv20to27':
+        benchmark_folder, benchmark_suite = G_BV_20to27
     used_benchmarks = []
     for qb_file in benchmark_suite:
         if dataset == 'medium' or dataset == 'large':

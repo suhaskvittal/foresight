@@ -133,10 +133,8 @@ class BenchmarkPass(AnalysisPass):
                     self.benchmark_results['SABRE Time'] = (end - start)
                     if self.measure_memory:
                         self.benchmark_results['SABRE Memory'] = sum(stat.size for stat in ss.statistics('traceback'))/1024.0
-                print('\t\t(sabre done.)')
             # ForeSight
             if 'foresight' in self.benchmark_list:
-                print('\t\t(foresight start.)')
                 start = timer()
                 if self.measure_memory:
                     tracemalloc.start(25)
@@ -153,9 +151,7 @@ class BenchmarkPass(AnalysisPass):
                     self.benchmark_results['ForeSight Time'] = (end - start)
                     if self.measure_memory:
                         self.benchmark_results['ForeSight Memory'] = sum(stat.size for stat in ss.statistics('traceback'))/1024.0
-                print('\t\t(foresight done.)')
             if 'ssonly' in self.benchmark_list:
-                print('\t\t(ssonly start.)')
                 start = timer()
                 if self.measure_memory:
                     tracemalloc.start(25)
@@ -172,7 +168,6 @@ class BenchmarkPass(AnalysisPass):
                     self.benchmark_results['ForeSight SSOnly Time'] = end - start
                     if self.measure_memory:
                         self.benchmark_results['ForeSight SSOnly Memory'] = sum(stat.size for stat in ss.statistics('traceback'))/1024.0
-                print('\t\t(ssonly done).')
         if self.simulate:
             # original
             ideal_counts = exec_sim(circ, basis_gates=self.basis_gates) 

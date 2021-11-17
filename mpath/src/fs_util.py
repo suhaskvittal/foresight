@@ -80,6 +80,8 @@ G_QAOA_3RL = _get_qasm_files('benchmarks/qaoa_3r_large')
 G_QAOA_3RVL = _get_qasm_files('benchmarks/qaoa_3r_vlarge')
 G_BV_VL = _get_qasm_files('benchmarks/bv_vlarge')
 G_BV_8to15 = _get_qasm_files('benchmarks/bv_8-15')
+G_BV_30to60 = _get_qasm_files('benchmarks/bv_30-60')
+G_BV_20to27 = _get_qasm_files('benchmarks/bv_20-27')
 
 # ALGORITHM PARAMETERS
 G_FORESIGHT_SOLN_CAP = 32
