@@ -42,7 +42,7 @@ class BenchmarkPass(AnalysisPass):
         self.simulate = kwargs['sim']
         if kwargs['noisy']:
             self.noise_model, edge_weights, vertex_weights, readout_weights = kwargs['noise_model']
-            slack = G_FORESIGHT_SLACK
+            slack = 0.02
         else:
             self.noise_model = None
             edge_weights, vertex_weights, readout_weights = None,None,None
@@ -63,7 +63,8 @@ class BenchmarkPass(AnalysisPass):
                 debug=kwargs['debug'],
                 edge_weights=edge_weights,
                 vertex_weights=vertex_weights,
-                readout_weights=readout_weights
+                readout_weights=readout_weights,
+                noisy_routing=kwargs['noisy']
         )
         self.foresight_ssonly_router = ForeSight(
                 coupling_map,
@@ -72,7 +73,8 @@ class BenchmarkPass(AnalysisPass):
                 debug=kwargs['debug'],
                 edge_weights=edge_weights,
                 vertex_weights=vertex_weights,
-                readout_weights=readout_weights
+                readout_weights=readout_weights,
+                noisy_routing=kwargs['noisy']
         )
         # Set up passes
         self.sabre_pass = PassManager([

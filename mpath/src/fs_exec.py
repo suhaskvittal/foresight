@@ -18,7 +18,7 @@ from timeit import default_timer as timer
 from sys import argv
 
 SIMULATOR = Aer.get_backend('qasm_simulator')
-DEFAULT_SHOTS = 4000
+DEFAULT_SHOTS = 10000
 
 def draw(circ):
     print(circ.draw(output='text'))

@@ -81,7 +81,7 @@ def google_weber_noise_model():
         else:
             e = g_2q_err['cx'][(j,i)]
         # Log weighting maintains product property
-        edge_weights[(i,j)] = np.e/-np.log(e) 
+        edge_weights[(i,j)] = e 
     # Build vertex weights and readout weights for ForeSight
     vertex_weights = {}
     readout_weights = {}
@@ -92,7 +92,7 @@ def google_weber_noise_model():
         mean_mse = 0.5*(prob_m1_g0[i] + prob_m0_g1[i])
         vertex_weights[i] = mean_1qe 
         readout_weights[i] = mean_mse
-    return noise_model, None,None,None#edge_weights, vertex_weights, readout_weights
+    return noise_model, edge_weights, vertex_weights, readout_weights
 
 def _build_noise_model(
     num_qubits, 

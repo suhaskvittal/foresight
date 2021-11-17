@@ -29,6 +29,7 @@ class ForeSight(TransformationPass):
         vertex_weights=None,
         readout_weights=None,
         depth_minimize=False,
+        noisy_routing=False,
         debug=False
     ):
         super().__init__()
@@ -37,8 +38,14 @@ class ForeSight(TransformationPass):
         self.coupling_map = coupling_map        
         self.solution_cap = solution_cap
         self.depth_min = depth_minimize
+        self.noisy_routing = noisy_routing
 
-        self.distance_matrix, self.paths_on_arch = process_coupling_map(coupling_map, slack, edge_weights=edge_weights) 
+        self.distance_matrix, self.paths_on_arch = process_coupling_map(
+            coupling_map,
+            slack,
+            edge_weights=edge_weights,
+            noisy_weights=noisy_routing
+        ) 
         self.mean_degree = len(self.coupling_map.get_edges()) / self.coupling_map.size()
 
         self.fake_run = False
@@ -347,7 +354,7 @@ class ForeSight(TransformationPass):
             latest_layout = test_layout
             latest_fold = fold
             # Compute distance to post primary layer.
-            dist = self._distf(len(path)-1, post_primary_layer_view, test_layout)
+            dist = self._distf(fold, len(path)-1, post_primary_layer_view, test_layout)
             if dist < min_dist or min_dist == -1:
                 min_dist = dist
                 min_folds = [(
@@ -392,11 +399,11 @@ class ForeSight(TransformationPass):
         if verify_only:
             dist = 0
         else:
-            dist = self._distf(size, post_primary_layer_view, test_layout)
+            dist = self._distf(soln, size, post_primary_layer_view, test_layout)
 
         return True, dist
 
-    def _distf(self, soln_size, post_primary_layer_view, test_layout):
+    def _distf(self, soln, soln_size, post_primary_layer_view, test_layout):
         dist = 0.0
         num_ops = 0
         for r in range(0, len(post_primary_layer_view)):
@@ -416,8 +423,13 @@ class ForeSight(TransformationPass):
             return 0
         else:
             dist = dist/num_ops
+            if self.noisy_routing:
+                # Compute overall probability of success
+                psuc = 1.0
+                for (p0,p1) in soln:
+                    psuc *= (1-self.edge_weights[(p0,p1)])**3
+                return psuc*dist
             if self.depth_min:
                 return dist + soln_size
-            else:
-                return dist+soln_size*np.exp(-(num_ops/self.mean_degree)**2)  # scale down
+            return dist+soln_size*np.exp(-(num_ops/self.mean_degree)**2) 
 
