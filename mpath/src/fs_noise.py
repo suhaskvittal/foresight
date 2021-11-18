@@ -15,7 +15,7 @@ import numpy as np
 
 from fs_util import * 
 
-def google_weber_noise_model():
+def google_weber_noise_model(noise_factor):
     weber = G_GOOGLE_WEBER 
     # Noise parameters from Weber (some estimated)
     G1Q_TIME = 25  # ns
@@ -40,10 +40,10 @@ def google_weber_noise_model():
         split_line = reader.readline().split(' ')
         q, e_1q, pm1g0, pm0g1 = int(split_line[0]), float(split_line[1]), float(split_line[2]), float(split_line[3])
         for g in g_1q_err:
-            g_1q_err[g][q] = e_1q
+            g_1q_err[g][q] = e_1q*noise_factor
             g_1q_time[g][q] = G1Q_TIME
-        prob_m1_g0[q] = pm1g0
-        prob_m0_g1[q] = pm0g1
+        prob_m1_g0[q] = pm1g0*noise_factor
+        prob_m0_g1[q] = pm0g1*noise_factor
         meas_time[q] = MEAS_TIME
         coh_t1[q] = T1
         coh_t2[q] = T2
@@ -51,8 +51,8 @@ def google_weber_noise_model():
     while line != '':
         split_line = line.split(' ')
         q1, q2, e_2q = int(split_line[0]), int(split_line[1]), float(split_line[2])
-        g_2q_err['cx'][(q1,q2)] = e_2q 
-        g_2q_err['cx'][(q2,q1)] = e_2q
+        g_2q_err['cx'][(q1,q2)] = e_2q*noise_factor 
+        g_2q_err['cx'][(q2,q1)] = e_2q*noise_factor
         g_2q_time['cx'][(q1,q2)] = CX_TIME
         g_2q_time['cx'][(q2,q1)] = CX_TIME
         line = reader.readline()

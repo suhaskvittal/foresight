@@ -100,7 +100,6 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
             benchmark_results['A* Time'] = 0
             benchmark_results['A* Memory'] = 0
             if 'vl' not in dataset:
-                print('\t\t(A* start.)')
                 qmap_start = timer()
                 tracemalloc.start(25)
                 qmap_res = qmap.compile(
@@ -112,7 +111,6 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
                 ss = tracemalloc.take_snapshot()
                 qmap_end = timer()
                 tracemalloc.stop()
-                print('\t\t(A* done.)')
                 # Benchmark A* search
                 qmap_circ = QuantumCircuit.from_qasm_str(qmap_res['mapped_circuit']['qasm'])
                 qmap_circ.global_phase = circ.global_phase
@@ -135,30 +133,57 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
     df.to_csv(out_file)
     
 if __name__ == '__main__':
-    mode = argv[1]
+    mode = 'medium'
     
-    coupling_style = argv[2]
-    runs = int(argv[3])
-    file_out = argv[4]
+    coupling_style = 'tokyo'
+    runs = 1
+    file_out = 'log'
     
     benchmark_kwargs = {
         'sim': True,
         'debug': False,
         'noisy': False,
-        'mem': True
+        'mem': True,
+        'slack': G_FORESIGHT_SLACK,
+        'solncap': G_FORESIGHT_SOLN_CAP,
+        'noise_factor': 1.0
     }
-    if len(argv) > 5:
-        if '--nosim' in argv:
+    i = 1
+    while i < len(argv):
+        arg = argv[i]
+        if arg == '--nosim':
             benchmark_kwargs['sim'] = False
-        if '--debug' in argv:
+        elif arg == '--debug':
             benchmark_kwargs['debug'] = True
-        if '--noisy' in argv:
+        elif arg == '--noisy':
             benchmark_kwargs['noisy'] = True
-        if '--nomem' in argv:
+        elif arg == '--nomem':
             benchmark_kwargs['mem'] = False
-
-    print('Config:\n\tmode: %s\n\tcoupling style: %s\n\truns: %d'
-            % (mode, coupling_style, runs))
+        elif arg == '--dataset':
+            mode = argv[i+1]
+            i += 1
+        elif arg == '--runs':
+            runs = int(argv[i+1])  # get next argument
+            i += 1
+        elif arg == '--coupling':
+            coupling_style = argv[i+1]
+            i += 1
+        elif arg == '--output-file':
+            file_out = argv[i+1]
+            i += 1 
+        elif arg == '--slack':
+            benchmark_kwargs['slack'] = float(argv[i+1])
+            i += 1
+        elif arg == '--solncap':
+            benchmark_kwargs['solncap'] = int(argv[i+1])
+        elif arg == '--noise-scale':
+            benchmark_kwargs['noise_factor'] = float(argv[i+1])
+            i += 1
+        i += 1
+    print('Config:\n\tdataset: %s\n\tcoupling style: %s\n\truns: %d\n\toutput-file: %s'
+            % (mode, coupling_style, runs, file_out))
+    for x in benchmark_kwargs:
+        print('\t%s: %s' % (x, str(benchmark_kwargs[x])))
 
     if coupling_style == 'toronto':
         coupling_map = G_IBM_TORONTO 
@@ -167,7 +192,7 @@ if __name__ == '__main__':
         coupling_map = G_GOOGLE_WEBER
         arch_file = 'arch/google_weber.arch'
         if benchmark_kwargs['noisy']:
-            benchmark_kwargs['noise_model'] = google_weber_noise_model()
+            benchmark_kwargs['noise_model'] = google_weber_noise_model(benchmark_kwargs['noise_factor'])
     elif coupling_style == 'aspen9':
         coupling_map = G_RIGETTI_ASPEN9
         arch_file = 'arch/rigetti_aspen9.arch'

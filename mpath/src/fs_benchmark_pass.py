@@ -38,18 +38,19 @@ class BenchmarkPass(AnalysisPass):
     ):
         super().__init__()
 
+        self.basis_gates = G_QISKIT_GATE_SET
+
         # Parse kwargs
         self.simulate = kwargs['sim']
+        self.measure_memory = kwargs['mem']
+        # Set up noise model
         if kwargs['noisy']:
             self.noise_model, edge_weights, vertex_weights, readout_weights = kwargs['noise_model']
-            slack = 0.02
         else:
             self.noise_model = None
             edge_weights, vertex_weights, readout_weights = None,None,None
-            slack = G_FORESIGHT_SLACK
-        self.measure_memory = kwargs['mem']
-
-        self.basis_gates = G_QISKIT_GATE_SET
+        slack = kwargs['slack']
+        solution_cap = kwargs['solncap']
 
         # Set up routers
         self.benchmark_list = compare
@@ -59,7 +60,7 @@ class BenchmarkPass(AnalysisPass):
         self.foresight_router = ForeSight(
                 coupling_map,
                 slack=slack,
-                solution_cap=G_FORESIGHT_SOLN_CAP,
+                solution_cap=solution_cap,
                 debug=kwargs['debug'],
                 edge_weights=edge_weights,
                 vertex_weights=vertex_weights,
@@ -116,7 +117,6 @@ class BenchmarkPass(AnalysisPass):
             # Run dag on both passes. 
             # SABRE
             if 'sabre' in self.benchmark_list:
-                print('\t\t(sabre start.)')
                 start = timer()
                 if self.measure_memory:
                     tracemalloc.start(25)

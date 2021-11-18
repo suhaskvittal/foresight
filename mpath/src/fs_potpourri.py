@@ -159,31 +159,39 @@ def get_sk_model_trend():
             print('%s: %.3f' % (x, data[x][-1]))
     return data
 
-def get_dataset1(pickle_file):
+def get_dataset(pickle_file, excel_sub_type):
     dataset = {}
 
-    for coupling_map in ['toronto', 'aspen9', 'weber', 'tokyo']:
-        df = pd.read_excel('data/sabre_initial/%s_zulehner.xlsx' % coupling_map)
+    for coupling_map in ['toronto','aspen9', 'weber', 'tokyo']:
+        df = pd.read_excel('data/%s_%s.xlsx' % (coupling_map, excel_sub_type))
         dataset[coupling_map] = {
+            'original': {
+                df['Unnamed: 0'][x]: {
+                    'original cnots': df['Original CNOTs'][x]
+                } for x in list(df.index.values)
+            },
             'sabre': {
                 df['Unnamed: 0'][x]: {
                     'cnots added': df['SABRE CNOTs'][x],
                     'final depth': df['SABRE Depth'][x],
-                    'execution time': df['SABRE Time'][x]
+                    'execution time': df['SABRE Time'][x],
+                    'memory': df['SABRE Memory'][x]
                 } for x in list(df.index.values) 
             },
-            'foresight': {
+            'ips': {  # IPS is legacy name, used to not break code
                 df['Unnamed: 0'][x]: {
                     'cnots added': df['ForeSight CNOTs'][x],
                     'final depth': df['ForeSight Depth'][x],
-                    'execution time': df['ForeSight Time'][x]
+                    'execution time': df['ForeSight Time'][x],
+                    'memory': df['ForeSight Memory'][x]
                 } for x in list(df.index.values) 
             },
-            'foresight (shallow solve only)': {
+            'ips (shallow solve only)': {
                 df['Unnamed: 0'][x]: {
                     'cnots added': df['ForeSight SSOnly CNOTs'][x],
                     'final depth': df['ForeSight SSOnly Depth'][x],
-                    'execution time': df['ForeSight SSOnly Time'][x]
+                    'execution time': df['ForeSight SSOnly Time'][x],
+                    'memory': df['ForeSight SSOnly Memory'][x]
                 } for x in list(df.index.values) 
             },
             'best of sabre and ips': {
@@ -196,7 +204,8 @@ def get_dataset1(pickle_file):
                 df['Unnamed: 0'][x]: {
                     'cnots added': df['A* CNOTs'][x],
                     'final depth': df['A* Depth'][x],
-                    'execution time': df['A* Time'][x]
+                    'execution time': df['A* Time'][x],
+                    'memory': df['A* Memory'][x]
                 } for x in list(df.index.values) 
             }
         }
