@@ -204,4 +204,7 @@ if __name__ == '__main__':
     elif coupling_style == '100grid':
         coupling_map = G_100GRID
         arch_file = 'arch/100grid.arch'
+    elif coupling_style == '3heavyhex':
+        coupling_map = G_IBM_3HEAVYHEX
+        arch_file = 'arch/ibm_3heavyhex.arch'
     benchmark(coupling_map, arch_file, dataset=mode, runs=runs, out_file=file_out, **benchmark_kwargs)
