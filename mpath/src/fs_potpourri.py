@@ -159,12 +159,8 @@ def get_sk_model_trend():
             print('%s: %.3f' % (x, data[x][-1]))
     return data
 
-def get_dataset(pickle_file, excel_sub_type):
-    dataset = {}
-
-    for coupling_map in ['toronto','aspen9', 'weber', 'tokyo']:
-        df = pd.read_excel('data/%s_%s.xlsx' % (coupling_map, excel_sub_type))
-        dataset[coupling_map] = {
+def _df_to_pydict1(df):
+    d = {
             'original': {
                 df['Unnamed: 0'][x]: {
                     'original cnots': df['Original CNOTs'][x]
@@ -209,7 +205,70 @@ def get_dataset(pickle_file, excel_sub_type):
                 } for x in list(df.index.values) 
             }
         }
+    return d
+
+def _df_to_pydict2(df):
+    d = {
+            'original': {
+                df['Unnamed: 0'][x]: {
+                    'original cnots': df['Original CNOTs'][x]
+                } for x in list(df.index.values)
+            },
+            'sabre': {
+                df['Unnamed: 0'][x]: {
+                    'cnots added': df['SABRE CNOTs'][x],
+                    'final depth': df['SABRE Depth'][x],
+                    'execution time': df['SABRE Time'][x],
+                } for x in list(df.index.values) 
+            },
+            'ips': {  # IPS is legacy name, used to not break code
+                df['Unnamed: 0'][x]: {
+                    'cnots added': df['ForeSight CNOTs'][x],
+                    'final depth': df['ForeSight Depth'][x],
+                    'execution time': df['ForeSight Time'][x],
+                } for x in list(df.index.values) 
+            },
+            'ips (shallow solve only)': {
+                df['Unnamed: 0'][x]: {
+                    'cnots added': df['ForeSight SSOnly CNOTs'][x],
+                    'final depth': df['ForeSight SSOnly Depth'][x],
+                    'execution time': df['ForeSight SSOnly Time'][x],
+                } for x in list(df.index.values) 
+            },
+            'astar': {
+                df['Unnamed: 0'][x]: {
+                    'cnots added': df['A* CNOTs'][x],
+                    'final depth': df['A* Depth'][x],
+                    'execution time': df['A* Time'][x],
+                } for x in list(df.index.values) 
+            }
+        }
+    return d
+
+
+def get_dataset1(pickle_file, excel_sub_type):
+    dataset = {}
+
+    for coupling_map in ['toronto','aspen9', 'weber', 'tokyo']:
+        df = pd.read_excel('data/%s_%s.xlsx' % (coupling_map, excel_sub_type))
+        dataset[coupling_map] = _df_to_pydict1(df)
     # pickle dataset
     with open(pickle_file, 'wb') as writer:
         pkl.dump(dataset, writer)
 
+def get_path_sweep_dataset(pickle_file):
+    dataset = {}
+    for i in [1, 2, 4, 8, 16, 32]:
+        df = pd.read_csv('data/raw/path-sweep/weber_path_sweep_zulehner_partial_%d.csv' % i)
+        dataset[i] = _df_to_pydict2(df)
+    with open(pickle_file, 'wb') as writer:
+        pkl.dump(dataset, writer)
+
+def get_slack_sweep_dataset(pickle_file):
+    dataset = {}
+    for i in [0, 1, 2, 3, 4, 5]:
+        df = pd.read_csv('data/raw/slack-sweep/weber_slack_sweep_zulehner_partial_%d.csv' % i)
+        dataset[i] = _df_to_pydict2(df)
+    with open(pickle_file, 'wb') as writer:
+        pkl.dump(dataset, writer)
+    
