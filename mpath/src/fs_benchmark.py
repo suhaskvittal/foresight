@@ -57,6 +57,8 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
 
     if dataset == 'zulehner':
         benchmark_folder, benchmark_suite = G_ZULEHNER
+    elif dataset == 'zulehner_partial':
+        benchmark_folder, benchmark_suite = G_ZULEHNER_PARTIAL
     elif dataset == 'medium':
         benchmark_suite = G_QASMBENCH_MEDIUM
     elif dataset == 'large':

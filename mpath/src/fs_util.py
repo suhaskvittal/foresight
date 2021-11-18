@@ -46,19 +46,19 @@ G_QISKIT_GATE_SET = ['u1', 'u2', 'u3', 'cx']
 G_QASMBENCH_MEDIUM = [
     'adder_n10',        # single adder
 #    'qft_n15',
-    'dnn_n8',           # quantum deep neural net
+#    'dnn_n8',           # quantum deep neural net
 #    'cc_n12',           # counterfeit coin
     'multiply_n13',
     'multiplier_n15',   # binary multiplier
-    'qf21_n15',         # quantum phase estimation, factor 21           
+#    'qf21_n15',         # quantum phase estimation, factor 21           
     'sat_n11',      
     'seca_n11',         # shor's error correction
     'bv_n14',           # bernstein-vazirani algorithm 
-    'ising_n10',        # ising gate sim
-    'qaoa_n6',          
-    'qpe_n9',           # quantum phase estimation
-    'simon_n6',         # simon's algorithm 
-    'vqe_uccsd_n6',
+#    'ising_n10',        # ising gate sim
+#    'qaoa_n6',          
+#    'qpe_n9',           # quantum phase estimation
+#    'simon_n6',         # simon's algorithm 
+#    'vqe_uccsd_n6',
 #    'vqe_uccsd_n8'
 ]
 G_QASMBENCH_LARGE = [
@@ -75,13 +75,12 @@ G_QASMBENCH_LARGE = [
     'cc_n18'            # counterfeit coin
 ]
 G_ZULEHNER = _get_qasm_files('benchmarks/zulehner')
+G_ZULEHNER_PARTIAL = _get_qasm_files('benchmarks/zulehner_partial')
 G_QAOA_SK = _get_qasm_files('benchmarks/qaoa_sk')
 G_QAOA_3RL = _get_qasm_files('benchmarks/qaoa_3r_large')
 G_QAOA_3RVL = _get_qasm_files('benchmarks/qaoa_3r_vlarge')
 G_BV_VL = _get_qasm_files('benchmarks/bv_vlarge')
 G_BV_8to15 = _get_qasm_files('benchmarks/bv_8-15')
-G_BV_30to60 = _get_qasm_files('benchmarks/bv_30-60')
-G_BV_20to27 = _get_qasm_files('benchmarks/bv_20-27')
 
 # ALGORITHM PARAMETERS
 G_FORESIGHT_SOLN_CAP = 32
