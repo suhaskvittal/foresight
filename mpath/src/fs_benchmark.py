@@ -32,6 +32,7 @@ from collections import defaultdict
 from os import listdir
 from os.path import isfile, join
 import tracemalloc
+import traceback
     
 def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv', runs=5, **kwargs):
     basis_pass = Unroller(G_QISKIT_GATE_SET)
@@ -77,6 +78,7 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
         benchmark_folder, benchmark_suite = G_BV_30to60
     elif dataset == 'bv20to27':
         benchmark_folder, benchmark_suite = G_BV_20to27
+
     used_benchmarks = []
     for qb_file in benchmark_suite:
         if dataset == 'medium' or dataset == 'large':
@@ -123,6 +125,7 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
                 benchmark_results['A* Memory'] = sum(stat.size for stat in ss.statistics('traceback'))/1024.0
         except (QiskitError, KeyError) as error:
             print('\t\t(A* failure)')
+            traceback.print_exc()
             
         if benchmark_results['SABRE CNOTs'] == -1:
             print('\tN/A')

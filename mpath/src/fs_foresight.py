@@ -385,9 +385,11 @@ class ForeSight(TransformationPass):
             return True, 0
         test_layout = current_layout.copy()
         size = 0
+        flattened_soln = []
         for layer in soln:
             for (p0, p1) in layer:
                 test_layout.swap(p0, p1)
+                flattened_soln.append((p0,p1))
                 size += 1
         max_allowed_size = 0
         for (v0, v1) in target_list:
@@ -399,7 +401,8 @@ class ForeSight(TransformationPass):
         if verify_only:
             dist = 0
         else:
-            dist = self._distf(soln, size, post_primary_layer_view, test_layout)
+
+            dist = self._distf(flattened_soln, size, post_primary_layer_view, test_layout)
 
         return True, dist
 
