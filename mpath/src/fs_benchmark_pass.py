@@ -62,10 +62,10 @@ class BenchmarkPass(AnalysisPass):
                 slack=slack,
                 solution_cap=solution_cap,
                 debug=kwargs['debug'],
-                edge_weights=edge_weights,
-                vertex_weights=vertex_weights,
-                readout_weights=readout_weights,
-                noisy_routing=kwargs['noisy']
+                edge_weights=edge_weights
+                #vertex_weights=vertex_weights,
+                #readout_weights=readout_weights,
+                #noisy_routing=kwargs['noisy']
         )
         self.foresight_ssonly_router = ForeSight(
                 coupling_map,
