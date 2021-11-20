@@ -39,6 +39,7 @@ G_RIGETTI_ASPEN9 = _read_arch_file('arch/rigetti_aspen9.arch')
 G_IBM_TOKYO = _read_arch_file('arch/ibm_tokyo.arch')
 G_IBM_3HEAVYHEX = _read_arch_file('arch/ibm_3heavyhex.arch')
 G_100GRID = _read_arch_file('arch/100grid.arch')
+G_500GRID = _read_arch_file('arch/500grid.arch')
 
 # GATE SETS
 G_QISKIT_GATE_SET = ['u1', 'u2', 'u3', 'cx']
@@ -81,7 +82,6 @@ G_QAOA_SK = _get_qasm_files('benchmarks/qaoa_sk')
 G_QAOA_3RL = _get_qasm_files('benchmarks/qaoa_3r_large')
 G_QAOA_3RVL = _get_qasm_files('benchmarks/qaoa_3r_vlarge')
 G_BV_VL = _get_qasm_files('benchmarks/bv_vlarge')
-G_BV_8to15 = _get_qasm_files('benchmarks/bv_8-15')
 
 # ALGORITHM PARAMETERS
 G_FORESIGHT_SOLN_CAP = 32

@@ -159,7 +159,7 @@ def get_sk_model_trend():
             print('%s: %.3f' % (x, data[x][-1]))
     return data
 
-def _df_to_pydict1(df):
+def _df_to_pydict(df, perf=False, mem=False, noisy=False, ssonly=False):
     d = {
             'original': {
                 df['Unnamed: 0'][x]: {
@@ -171,7 +171,8 @@ def _df_to_pydict1(df):
                     'cnots added': df['SABRE CNOTs'][x],
                     'final depth': df['SABRE Depth'][x],
                     'execution time': df['SABRE Time'][x],
-                    'memory': df['SABRE Memory'][x]
+                    'memory': df['SABRE Memory'][x] if mem else 0.0,
+                    'sabre tvd': df['SABRE TVD'][x] if noisy else 0.0
                 } for x in list(df.index.values) 
             },
             'ips': {  # IPS is legacy name, used to not break code
@@ -179,7 +180,9 @@ def _df_to_pydict1(df):
                     'cnots added': df['ForeSight CNOTs'][x],
                     'final depth': df['ForeSight Depth'][x],
                     'execution time': df['ForeSight Time'][x],
-                    'memory': df['ForeSight Memory'][x]
+                    'memory': df['ForeSight Memory'][x] if mem else 0.0,
+                    'ips tvd': df['ForeSight TVD'][x] if noisy else 0.0,
+                    'relative tvd': df['Relative TVD'][x] if noisy else 0.0
                 } for x in list(df.index.values) 
             },
             'ips (shallow solve only)': {
@@ -187,71 +190,32 @@ def _df_to_pydict1(df):
                     'cnots added': df['ForeSight SSOnly CNOTs'][x],
                     'final depth': df['ForeSight SSOnly Depth'][x],
                     'execution time': df['ForeSight SSOnly Time'][x],
-                    'memory': df['ForeSight SSOnly Memory'][x]
+                    'memory': df['ForeSight SSOnly Memory'][x] if mem else 0.0 
                 } for x in list(df.index.values) 
-            },
+            } if ssonly else {},
             'best of sabre and ips': {
                 df['Unnamed: 0'][x]: {
                     'cnots added': df['Best CNOTs'][x],
                     'final depth': df['Best Depth'][x]
                 } for x in list(df.index.values)
-            },
+            } if perf else {},
             'astar': {
                 df['Unnamed: 0'][x]: {
                     'cnots added': df['A* CNOTs'][x],
                     'final depth': df['A* Depth'][x],
                     'execution time': df['A* Time'][x],
-                    'memory': df['A* Memory'][x]
+                    'memory': df['A* Memory'][x] if mem else 0.0
                 } for x in list(df.index.values) 
             }
         }
     return d
-
-def _df_to_pydict2(df):
-    d = {
-            'original': {
-                df['Unnamed: 0'][x]: {
-                    'original cnots': df['Original CNOTs'][x]
-                } for x in list(df.index.values)
-            },
-            'sabre': {
-                df['Unnamed: 0'][x]: {
-                    'cnots added': df['SABRE CNOTs'][x],
-                    'final depth': df['SABRE Depth'][x],
-                    'execution time': df['SABRE Time'][x],
-                } for x in list(df.index.values) 
-            },
-            'ips': {  # IPS is legacy name, used to not break code
-                df['Unnamed: 0'][x]: {
-                    'cnots added': df['ForeSight CNOTs'][x],
-                    'final depth': df['ForeSight Depth'][x],
-                    'execution time': df['ForeSight Time'][x],
-                } for x in list(df.index.values) 
-            },
-            'ips (shallow solve only)': {
-                df['Unnamed: 0'][x]: {
-                    'cnots added': df['ForeSight SSOnly CNOTs'][x],
-                    'final depth': df['ForeSight SSOnly Depth'][x],
-                    'execution time': df['ForeSight SSOnly Time'][x],
-                } for x in list(df.index.values) 
-            },
-            'astar': {
-                df['Unnamed: 0'][x]: {
-                    'cnots added': df['A* CNOTs'][x],
-                    'final depth': df['A* Depth'][x],
-                    'execution time': df['A* Time'][x],
-                } for x in list(df.index.values) 
-            }
-        }
-    return d
-
 
 def get_dataset1(pickle_file, excel_sub_type):
     dataset = {}
 
     for coupling_map in ['toronto','aspen9', 'weber', 'tokyo']:
         df = pd.read_excel('data/%s_%s.xlsx' % (coupling_map, excel_sub_type))
-        dataset[coupling_map] = _df_to_pydict1(df)
+        dataset[coupling_map] = _df_to_pydict(df, perf=True, mem=True, ssonly=True)
     # pickle dataset
     with open(pickle_file, 'wb') as writer:
         pkl.dump(dataset, writer)
@@ -260,7 +224,7 @@ def get_path_sweep_dataset(pickle_file):
     dataset = {}
     for i in [1, 2, 4, 8, 16, 32]:
         df = pd.read_csv('data/raw/path-sweep/weber_path_sweep_zulehner_partial_%d.csv' % i)
-        dataset[i] = _df_to_pydict2(df)
+        dataset[i] = _df_to_pydict(df)
     with open(pickle_file, 'wb') as writer:
         pkl.dump(dataset, writer)
 
@@ -268,7 +232,15 @@ def get_slack_sweep_dataset(pickle_file):
     dataset = {}
     for i in [0, 1, 2, 3, 4, 5]:
         df = pd.read_csv('data/raw/slack-sweep/weber_slack_sweep_zulehner_partial_%d.csv' % i)
-        dataset[i] = _df_to_pydict2(df)
+        dataset[i] = _df_to_pydict(df)
+    with open(pickle_file, 'wb') as writer:
+        pkl.dump(dataset, writer)
+    
+def get_noise_sweep_dataset(pickle_file):
+    dataset = {}
+    for i in [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]:
+        df = pd.read_csv('data/raw/noise-sweep/weber_noise_sweep_medium_%.2f.csv' % i)
+        dataset[i] = _df_to_pydict(df, noisy=True)
     with open(pickle_file, 'wb') as writer:
         pkl.dump(dataset, writer)
     
