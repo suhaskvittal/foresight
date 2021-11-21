@@ -47,7 +47,6 @@ class BenchmarkPass(AnalysisPass):
 
         self.basis_gates = G_QISKIT_GATE_SET
         self.arch_file = arch_file
-        self.noise_factor = kwargs[noise_factor]
 
         # Parse kwargs
         self.simulate = kwargs['sim']

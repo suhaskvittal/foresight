@@ -73,6 +73,7 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
         benchmark_folder, benchmark_suite = G_BV_VL
 
     used_benchmarks = []
+    sim_counts = {}
     for qb_file in benchmark_suite:
         if dataset == 'medium' or dataset == 'large':
             circ = QuantumCircuit.from_qasm_file('benchmarks/qasmbench/%s/%s/%s.qasm' % (dataset, qb_file, qb_file))    
@@ -98,8 +99,10 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
         for x in benchmark_results:
             data[x].append(benchmark_results[x])
         if kwargs['sim']:
-            with open('counts_%s_%.3f.pkl' % (qb_file, kwargs['noise_factor'])) as writer
-                pkl.dump(benchmark_pass.simulation_counts, writer) 
+            sim_counts['qb_file'] = benchmark_pass.simulation_counts
+    if kwargs['sim']:
+        with open('counts_%s.pkl' % out_file, 'wb') as writer:
+            pkl.dump(benchmark_pass.simulation_counts, writer) 
     df = pd.DataFrame(data=data, index=used_benchmarks)
     df.to_csv(out_file)
     
