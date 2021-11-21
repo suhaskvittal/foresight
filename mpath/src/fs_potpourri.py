@@ -181,10 +181,19 @@ def _df_to_pydict(df, perf=False, mem=False, noisy=False, ssonly=False):
                     'final depth': df['ForeSight Depth'][x],
                     'execution time': df['ForeSight Time'][x],
                     'memory': df['ForeSight Memory'][x] if mem else 0.0,
-                    'ips tvd': df['ForeSight TVD'][x] if noisy else 0.0,
-                    'relative tvd': df['Relative TVD'][x] if noisy else 0.0
+                    'ips tvd': df['ForeSight TVD'][x] if noisy else 0.0
                 } for x in list(df.index.values) 
             },
+            'noisy ips': {
+                df['Unnamed: 0'][x]: {
+                    'cnots added': df['Noisy ForeSight CNOTs'][x],
+                    'final depth': df['Noisy ForeSight Depth'][x],
+                    'execution time': df['ForeSight Time'][x],
+                    'noisy ips tvd': df['Noisy ForeSight TVD'][x],
+                    'relative tvd to sabre': df['SABRE Relative TVD'][x],
+                    'relative tvd to foresight': df['ForeSight Relative TVD'][x]
+                } for x in list(df.index.values)
+            } if noisy else {},
             'ips (shallow solve only)': {
                 df['Unnamed: 0'][x]: {
                     'cnots added': df['ForeSight SSOnly CNOTs'][x],
@@ -206,7 +215,7 @@ def _df_to_pydict(df, perf=False, mem=False, noisy=False, ssonly=False):
                     'execution time': df['A* Time'][x],
                     'memory': df['A* Memory'][x] if mem else 0.0
                 } for x in list(df.index.values) 
-            }
+            } if perf else {}
         }
     return d
 
@@ -238,7 +247,7 @@ def get_slack_sweep_dataset(pickle_file):
     
 def get_noise_sweep_dataset(pickle_file):
     dataset = {}
-    for i in [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]:
+    for i in [0.07, 0.08, 0.09, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]:
         df = pd.read_csv('data/raw/noise-sweep/weber_noise_sweep_medium_%.2f.csv' % i)
         dataset[i] = _df_to_pydict(df, noisy=True)
     with open(pickle_file, 'wb') as writer:

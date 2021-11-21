@@ -31,6 +31,7 @@ from collections import defaultdict
 import tracemalloc
 import signal
 import traceback
+import pickle as pkl
 
 class BenchmarkPass(AnalysisPass):
     def __init__(
@@ -46,6 +47,7 @@ class BenchmarkPass(AnalysisPass):
 
         self.basis_gates = G_QISKIT_GATE_SET
         self.arch_file = arch_file
+        self.noise_factor = kwargs[noise_factor]
 
         # Parse kwargs
         self.simulate = kwargs['sim']
@@ -113,6 +115,7 @@ class BenchmarkPass(AnalysisPass):
         self.compute_stats = compute_stats
 
         self.benchmark_results = None
+        self.simulation_counts = None
     
     def run(self, dag):
         self.benchmark_results = defaultdict(float)
@@ -258,6 +261,14 @@ class BenchmarkPass(AnalysisPass):
             # Relative
             self.benchmark_results['SABRE Relative TVD'] = self.benchmark_results['Noisy ForeSight TVD'] / self.benchmark_results['SABRE TVD']
             self.benchmark_results['ForeSight Relative TVD'] = self.benchmark_results['Noisy ForeSight TVD'] / self.benchmark_results['ForeSight TVD']
+            # Save counts
+            counts_dict = {
+                'sabre': sabre_counts,
+                'foresight': foresight_counts,
+                'noisy foresight': noisy_foresight_counts
+            }
+            self.simulation_counts = counts_dict
+
         # Some circuit statistics as well.
         if self.compute_stats:
             layer_view_pass = LayerViewPass()
