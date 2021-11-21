@@ -243,4 +243,11 @@ def get_noise_sweep_dataset(pickle_file):
         dataset[i] = _df_to_pydict(df, noisy=True)
     with open(pickle_file, 'wb') as writer:
         pkl.dump(dataset, writer)
-    
+
+def get_bv_dataset(pickle_file):
+    dataset = {}
+    for i in ['large', 'vlarge']:
+        df = pd.read_excel('data/bv_%s.xlsx' % i)
+        dataset[i] = _df_to_pydict(df, mem=True)
+    with open(pickle_file, 'wb') as writer:
+        pkl.dump(dataset, writer)

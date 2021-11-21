@@ -29,6 +29,8 @@ import numpy as np
 
 from collections import defaultdict
 import tracemalloc
+import signal
+import traceback
 
 class BenchmarkPass(AnalysisPass):
     def __init__(
@@ -115,6 +117,8 @@ class BenchmarkPass(AnalysisPass):
         print('\tBenchmark Logging:')
         print('\t\tsize, depth =', dag.size(), dag.depth())
 
+        signal.signal(signal.SIGALRM, lambda x, y: print('A* timed out.'))
+
         for r in range(self.runs):
             # Get initial layout.
             circ = original_circuit.copy()
@@ -132,7 +136,7 @@ class BenchmarkPass(AnalysisPass):
                 end = timer()
                 if self.measure_memory:
                     tracemalloc.stop()
-                sabre_cnots = sabre_circ.count_ops()['cx']
+                sabre_cnots = sabre_circ.count_ops()['cx'] - circ_cx
                 if r == 0 or self.benchmark_results['SABRE CNOTs'] > sabre_cnots:
                     self.benchmark_results['SABRE CNOTs'] = sabre_cnots
                     self.benchmark_results['SABRE Depth'] = (sabre_circ.depth())
@@ -151,7 +155,7 @@ class BenchmarkPass(AnalysisPass):
                 end = timer()
                 if self.measure_memory:
                     tracemalloc.stop()
-                foresight_cnots = foresight_circ.count_ops()['cx']
+                foresight_cnots = foresight_circ.count_ops()['cx'] - circ_cx 
                 if r == 0 or self.benchmark_results['ForeSight CNOTs'] > foresight_cnots:
                     self.benchmark_results['ForeSight CNOTs'] = foresight_cnots
                     self.benchmark_results['ForeSight Depth'] = (foresight_circ.depth())
@@ -169,7 +173,7 @@ class BenchmarkPass(AnalysisPass):
                 end = timer()
                 if self.measure_memory:
                     tracemalloc.stop()
-                ssonly_cnots = ssonly_circ.count_ops()['cx']
+                ssonly_cnots = ssonly_circ.count_ops()['cx'] - circ_cx
                 if r == 0 or self.benchmark_results['ForeSight SSOnly CNOTs'] > ssonly_cnots:
                     self.benchmark_results['ForeSight SSOnly CNOTs'] = ssonly_cnots
                     self.benchmark_results['ForeSight SSOnly Depth'] = ssonly_circ.depth()
@@ -178,24 +182,27 @@ class BenchmarkPass(AnalysisPass):
                         self.benchmark_results['ForeSight SSOnly Memory'] = sum(stat.size for stat in ss.statistics('traceback'))/1024.0
             if 'a*' in self.benchmark_list:
                 print('\t\ta* start.')
-                try:
-                    # Collect results from A* search
+                # Collect results from A* search
+                if r == 0:
                     self.benchmark_results['A* CNOTs'] = 0  # init in case we skip A* or an error occurs
                     self.benchmark_results['A* Depth'] = 0
                     self.benchmark_results['A* Time'] = 0
                     self.benchmark_results['A* Memory'] = 0
+                try:
                     qmap_pass = PassManager([
                         Unroller(['u1', 'u2', 'u3', 'id', 'u', 'p', 'cx'])
                     ])
                     start = timer()
                     if self.measure_memory:
                         tracemalloc.start(25)
+                    signal.alarm(60)  # A* can deadlock itself
                     qmap_res = qmap.compile(
                         circ,
                         arch=self.arch_file,
                         method=qmap.Method.heuristic,
                         initial_layout=qmap.InitialLayoutStrategy.identity
                     )
+                    signal.alarm(0)
                     if self.measure_memory:
                         ss = tracemalloc.take_snapshot()
                     end = timer()
@@ -204,9 +211,10 @@ class BenchmarkPass(AnalysisPass):
                     # Benchmark A* search
                     qmap_circ = QuantumCircuit.from_qasm_str(qmap_res['mapped_circuit']['qasm'])
                     qmap_circ = qmap_pass.run(qmap_circ)  # Compile gates to basis gates.
-                    self.benchmark_results['A* CNOTs'] = qmap_circ.count_ops()['cx']
-                    self.benchmark_results['A* Depth'] = qmap_circ.depth()
-                    self.benchmark_results['A* Time'] = end - start
+                    if r == 0 or self.benchmark_results['A* CNOTs'] > qmap_circ.count_ops()['cx'] - circ_cx:
+                        self.benchmark_results['A* CNOTs'] = qmap_circ.count_ops()['cx'] - circ_cx
+                        self.benchmark_results['A* Depth'] = qmap_circ.depth()
+                        self.benchmark_results['A* Time'] = end - start
                     if self.measure_memory:
                         self.benchmark_results['A* Memory'] = sum(stat.size for stat in ss.statistics('traceback'))/1024.0
                 except (QiskitError, KeyError) as error:

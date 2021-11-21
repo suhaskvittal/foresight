@@ -421,7 +421,7 @@ class ForeSight(TransformationPass):
             if self.depth_min:  
                 dist += sub_sum
             else:
-                dist += sub_sum * np.exp(-(r/((self.mean_degree)**2))**2)
+                dist += sub_sum * np.exp(-(r/((self.mean_degree)**1.5))**2)
         if num_ops == 0:
             return 0
         else:
@@ -434,5 +434,5 @@ class ForeSight(TransformationPass):
                 return psuc*dist
             if self.depth_min:
                 return dist + soln_size
-            return dist+soln_size*np.exp(-(num_ops/self.mean_degree)**2) 
+            return dist+soln_size*np.exp(-(num_ops/(self.mean_degree**1.5))) 
 

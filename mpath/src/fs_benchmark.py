@@ -36,7 +36,7 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
 
     data = defaultdict(list)
     if 'vl' in dataset or kwargs['noisy']:
-        compare = ['sabre', 'foresight']
+        compare = ['sabre', 'foresight', 'a*']
     elif dataset == 'zulehner':
         compare = ['sabre', 'foresight', 'ssonly', 'a*']
     else:
@@ -66,6 +66,8 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
         benchmark_folder, benchmark_suite = G_QAOA_3RL
     elif dataset == 'qaoa3rvl':
         benchmark_folder, benchmark_suite = G_QAOA_3RVL
+    elif dataset == 'bvl':
+        benchmark_folder, benchmark_suite = G_BV_L
     elif dataset == 'bvvl':
         benchmark_folder, benchmark_suite = G_BV_VL
 
@@ -80,6 +82,8 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
         used_benchmarks.append(qb_file)
         print('[%s]' % qb_file)
         _pad_circuit_to_fit(circ, coupling_map)
+        if not kwargs['sim']:
+            circ.remove_final_measurements()
         circ = filter_pass.run(circ)
 
         benchmark_results = defaultdict(int)

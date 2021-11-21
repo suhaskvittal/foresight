@@ -81,6 +81,7 @@ G_ZULEHNER_PARTIAL = _get_qasm_files('benchmarks/zulehner_partial')
 G_QAOA_SK = _get_qasm_files('benchmarks/qaoa_sk')
 G_QAOA_3RL = _get_qasm_files('benchmarks/qaoa_3r_large')
 G_QAOA_3RVL = _get_qasm_files('benchmarks/qaoa_3r_vlarge')
+G_BV_L = _get_qasm_files('benchmarks/bv_large')
 G_BV_VL = _get_qasm_files('benchmarks/bv_vlarge')
 
 # ALGORITHM PARAMETERS
