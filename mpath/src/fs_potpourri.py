@@ -253,9 +253,11 @@ def get_slack_sweep_dataset(pickle_file):
     
 def get_noise_sweep_dataset(pickle_file):
     dataset = {}
-    for i in [0.07, 0.08, 0.09, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]:
-        df = pd.read_csv('data/raw/noise-sweep/weber_noise_sweep_medium_%.2f.csv' % i)
-        dataset[i] = _df_to_pydict(df, noisy=True, sim_counts='data/raw/noise-sweep/counts_weber_noise_sweep_medium_%.2f.pkl' % i)
+    with open('routed_qobjs/weber_circ.pkl', 'rb') as reader:
+        dataset['base'] = pkl.load(reader)
+    for i in [0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.05, 0.1, 0.5, 1.0]:
+        with open('routed_qobjs/weber_circ_sweep_%.8f.pkl' % i, 'rb') as reader:
+            dataset[i] = pkl.load(reader)
     with open(pickle_file, 'wb') as writer:
         pkl.dump(dataset, writer)
 
