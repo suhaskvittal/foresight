@@ -88,7 +88,7 @@ def noise_sweep(noise_factor):
                 'eps': eps,
                 'tvd': tvd
             }
-    with open('routed_qobjgs/weber_circ_sweep_%.2f.pkl', 'wb') as writer:
+    with open('routed_qobjs/weber_circ_sweep_%.2f.pkl' % noise_factor, 'wb') as writer:
         pkl.dump(sim_counts, writer)
 
 if __name__ == '__main__':
