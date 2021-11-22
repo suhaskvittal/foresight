@@ -102,7 +102,7 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
             sim_counts['qb_file'] = benchmark_pass.simulation_counts
     if kwargs['sim']:
         with open('counts_%s.pkl' % out_file, 'wb') as writer:
-            pkl.dump(benchmark_pass.simulation_counts, writer) 
+            pkl.dump(sim_counts, writer) 
     df = pd.DataFrame(data=data, index=used_benchmarks)
     df.to_csv(out_file)
     
