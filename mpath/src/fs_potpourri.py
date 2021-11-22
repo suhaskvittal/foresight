@@ -159,13 +159,19 @@ def get_sk_model_trend():
             print('%s: %.3f' % (x, data[x][-1]))
     return data
 
-def _df_to_pydict(df, perf=False, mem=False, noisy=False, ssonly=False):
+def _df_to_pydict(df, perf=False, mem=False, noisy=False, ssonly=False, sim_counts=''):
+    if sim_counts != '':
+        with open(sim_counts, 'rb') as reader:
+            counts = pkl.load(reader) 
+    else:
+        counts = {}
     d = {
             'original': {
                 df['Unnamed: 0'][x]: {
                     'original cnots': df['Original CNOTs'][x]
                 } for x in list(df.index.values)
             },
+            'counts': counts,
             'sabre': {
                 df['Unnamed: 0'][x]: {
                     'cnots added': df['SABRE CNOTs'][x],
@@ -249,7 +255,7 @@ def get_noise_sweep_dataset(pickle_file):
     dataset = {}
     for i in [0.07, 0.08, 0.09, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]:
         df = pd.read_csv('data/raw/noise-sweep/weber_noise_sweep_medium_%.2f.csv' % i)
-        dataset[i] = _df_to_pydict(df, noisy=True)
+        dataset[i] = _df_to_pydict(df, noisy=True, sim_counts='data/raw/noise-sweep/counts_weber_noise_sweep_medium_%.2f.pkl' % i)
     with open(pickle_file, 'wb') as writer:
         pkl.dump(dataset, writer)
 

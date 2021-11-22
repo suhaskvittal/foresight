@@ -8,6 +8,7 @@ from qiskit.transpiler.passes import *
 
 from fs_util import *
 from fs_noise import google_weber_noise_model
+from fs_exec import _pad_circuit_to_fit
 from fs_exec import *
 
 from fs_foresight import ForeSight
@@ -21,7 +22,8 @@ def generate_qobjs():
 
     initial_pass = PassManager([
         Unroller(G_QISKIT_GATE_SET),
-        SabreLayout(coupling_map, routing_pass=SabreSwap(coupling_map,heuristic='decay'))
+        SabreLayout(coupling_map, routing_pass=SabreSwap(coupling_map,heuristic='decay')),
+        ApplyLayout()
     ])
     sabre_pass = PassManager([
         SabreSwap(coupling_map,heuristic='decay'),
@@ -38,7 +40,7 @@ def generate_qobjs():
     noisy_foresight_pass = PassManager([
         ForeSight(
             coupling_map,
-            slack=G_FORESIGHT_SLACK,
+            slack=0.01,
             solution_cap=G_FORESIGHT_SOLN_CAP,
             edge_weights=edge_weights
         ),
@@ -46,14 +48,16 @@ def generate_qobjs():
     ])
 
     data = {}
-    for qbfile in G_QASMBENCH_MEDIUM:
+    for qb_file in G_QASMBENCH_MEDIUM:
+        print(qb_file)
         circ = QuantumCircuit.from_qasm_file('benchmarks/qasmbench/medium/%s/%s.qasm' % (qb_file, qb_file))    
+        _pad_circuit_to_fit(circ, coupling_map)
         circ = initial_pass.run(circ)
         sabre_circ = sabre_pass.run(circ)
         foresight_circ = foresight_pass.run(circ)
         noisy_foresight_circ = noisy_foresight_pass.run(circ)
         ideal_counts = exec_sim(circ)
-        data[qbfile] = {
+        data[qb_file] = {
             'counts': ideal_counts,
             'sabre': sabre_circ,
             'foresight': foresight_circ,
@@ -68,6 +72,7 @@ def noise_sweep(noise_factor):
         d = pkl.load(reader)
     sim_counts = {}
     for qbfile in G_QASMBENCH_MEDIUM:
+        print(qbfile)
         sim_counts[qbfile] = {'ideal counts': d[qbfile]['counts']}
         for policy in ['sabre', 'foresight', 'noisy foresight']:
             circ = d[qbfile][policy]
