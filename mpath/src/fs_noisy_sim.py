@@ -48,13 +48,14 @@ def generate_qobjs():
     ])
 
     data = {}
-    for qb_file in G_QASMBENCH_MEDIUM:
+    folder, benchmarks = G_NOISY
+    for qb_file in benchmarks:
         print(qb_file)
-        circ = QuantumCircuit.from_qasm_file('benchmarks/qasmbench/medium/%s/%s.qasm' % (qb_file, qb_file))    
+        circ = QuantumCircuit.from_qasm_file('%s/%s' % (folder, qb_file))    
         _pad_circuit_to_fit(circ, coupling_map)
         circ = initial_pass.run(circ)
         best_sabre_circ, best_foresight_circ, best_noisy_foresight_circ = None, None, None
-        for r in range(5):
+        for r in range(3):
             sabre_circ = sabre_pass.run(circ)
             foresight_circ = foresight_pass.run(circ)
             noisy_foresight_circ = noisy_foresight_pass.run(circ)
