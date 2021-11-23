@@ -56,6 +56,7 @@ def generate_qobjs():
         circ = initial_pass.run(circ)
         best_sabre_circ, best_foresight_circ, best_noisy_foresight_circ = None, None, None
         for r in range(3):
+            print('\truns:', r)
             sabre_circ = sabre_pass.run(circ)
             foresight_circ = foresight_pass.run(circ)
             noisy_foresight_circ = noisy_foresight_pass.run(circ)
