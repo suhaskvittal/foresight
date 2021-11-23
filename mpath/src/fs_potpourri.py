@@ -254,7 +254,24 @@ def get_slack_sweep_dataset(pickle_file):
 def get_noise_sweep_dataset(pickle_file):
     dataset = {}
     with open('routed_qobjs/weber_circ.pkl', 'rb') as reader:
-        dataset['base'] = pkl.load(reader)
+        d = pkl.load(reader)
+        dataset['base'] = {
+            x: {
+                'counts': d[x]['counts'],
+                'sabre': {
+                    'circ': d[x]['sabre'],
+                    'cx': d[x]['sabre'].count_ops()['cx']
+                },
+                'foresight': {
+                    'circ': d[x]['foresight'],
+                    'cx': d[x]['foresight'].count_ops()['cx']
+                },
+                'noisy foresight': {
+                    'circ': d[x]['noisy foresight'],
+                    'cx': d[x]['noisy foresight'].count_ops()['cx']
+                }
+            } for x in d
+        }
     for i in [0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.05, 0.1, 0.5, 1.0]:
         with open('routed_qobjs/weber_circ_sweep_%.8f.pkl' % i, 'rb') as reader:
             dataset[i] = pkl.load(reader)
