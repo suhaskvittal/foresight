@@ -53,15 +53,28 @@ def generate_qobjs():
         circ = QuantumCircuit.from_qasm_file('benchmarks/qasmbench/medium/%s/%s.qasm' % (qb_file, qb_file))    
         _pad_circuit_to_fit(circ, coupling_map)
         circ = initial_pass.run(circ)
-        sabre_circ = sabre_pass.run(circ)
-        foresight_circ = foresight_pass.run(circ)
-        noisy_foresight_circ = noisy_foresight_pass.run(circ)
+        best_sabre_circ, best_foresight_circ, best_noisy_foresight_circ = None, None, None
+        for r in range(5):
+            sabre_circ = sabre_pass.run(circ)
+            foresight_circ = foresight_pass.run(circ)
+            noisy_foresight_circ = noisy_foresight_pass.run(circ)
+            if r == 0:
+                best_sabre_circ = sabre_circ
+                best_foresight_circ = foresight_circ
+                best_noisy_foresight_circ = noisy_foresight_circ
+            else:
+                if best_sabre_circ.count_ops()['cx'] > sabre_circ.count_ops()['cx']:
+                    best_sabre_circ = sabre_circ
+                if best_foresight_circ.count_ops()['cx'] > foresight_circ.count_ops()['cx']:
+                    best_foresight_circ = foresight_circ
+                if best_noisy_foresight_circ.count_ops()['cx'] > noisy_foresight_circ.count_ops()['cx']:
+                    best_noisy_foresight_circ = noisy_foresight_circ
         ideal_counts = exec_sim(circ)
         data[qb_file] = {
             'counts': ideal_counts,
-            'sabre': sabre_circ,
-            'foresight': foresight_circ,
-            'noisy foresight': noisy_foresight_circ
+            'sabre': best_sabre_circ,
+            'foresight': best_foresight_circ,
+            'noisy foresight': best_noisy_foresight_circ
         }
     with open('routed_qobjs/weber_circ.pkl', 'wb') as writer:
         pkl.dump(data, writer)
