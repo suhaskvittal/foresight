@@ -86,7 +86,8 @@ def noise_sweep(noise_factor):
     with open('routed_qobjs/weber_circ.pkl', 'rb') as reader:
         d = pkl.load(reader)
     sim_counts = {}
-    for qbfile in G_QASMBENCH_MEDIUM:
+    folder, benchmarks = G_NOISY
+    for qbfile in benchmarks:
         print(qbfile)
         sim_counts[qbfile] = {'ideal counts': d[qbfile]['counts']}
         for policy in ['sabre', 'foresight', 'noisy foresight']:
