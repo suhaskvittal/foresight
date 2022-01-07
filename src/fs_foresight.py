@@ -27,6 +27,7 @@ class ForeSight(TransformationPass):
         coupling_map, 
         slack=2,
         solution_cap=32,
+        excavate_point=2,
         edge_weights=None,
         vertex_weights=None,
         readout_weights=None,
@@ -39,6 +40,7 @@ class ForeSight(TransformationPass):
         self.slack = slack
         self.coupling_map = coupling_map        
         self.solution_cap = solution_cap
+        self.excavate_point = excavate_point
         self.depth_min = depth_minimize
         self.noisy_routing = noisy_routing
 
@@ -75,6 +77,7 @@ class ForeSight(TransformationPass):
         secondary_layer_view = deque(secondary_layer_view)
 
         solutions = self.deep_solve(
+            dag,
             primary_layer_view, 
             secondary_layer_view, 
             [DeepSolveSolution([], current_layout, 0, set())],
@@ -116,6 +119,7 @@ class ForeSight(TransformationPass):
     
     def deep_solve(
         self, 
+        dag,
         primary_layer_view, 
         secondary_layer_view, 
         base_solver_queue, 
@@ -153,7 +157,22 @@ class ForeSight(TransformationPass):
             next_leaves = []
             for compkern in solver_queue:  # Empty out queue into next_solver_queue.
                 parent = leaves[compkern.parent_id]
-                # Find parent corresponding to parent id.
+                # First, try to excavate for the current computation kernel.
+                excsoln = self.excavate(
+                    dag,
+                    primary_layer_view,
+                    secondary_layer_view,
+                    compkern.layout,
+                    canonical_register,
+                    compkern.completed_nodes
+                )
+                if excsoln is not None:
+                    # Update this compkern
+                    compkern.layout = excsoln.layout
+                    compkern.completed_nodes = excsoln.completed_nodes
+                    # Update the parent tree node as well
+                    parent.obj_data.extend(excsoln.output_layers)
+
                 solutions = self.shallow_solve(
                     primary_layer_view,
                     secondary_layer_view,
@@ -223,7 +242,7 @@ class ForeSight(TransformationPass):
                 min_leaf.leaf_sum,
                 min_leaf.completed_nodes
             ))
-        return self.deep_solve(primary_layer_view, secondary_layer_view, min_solutions, canonical_register)
+        return self.deep_solve(dag, primary_layer_view, secondary_layer_view, min_solutions, canonical_register)
                 
     def shallow_solve(
         self, 
@@ -250,32 +269,11 @@ class ForeSight(TransformationPass):
 
         # Only execute operations in current layer.
         # Define post primary layer view
-        if len(primary_layer_view) == 1:
-            post_primary_layer_view = []
-        else:
-            post_primary_layer_view = []
-            visited = set()
-            # The post primary layer is composed the first 2-qubit operation for each qubit
-            # in the circuit. The maximum size of the post primary layer is NQUBITS/2.
-            for i in range(1, min(len(primary_layer_view), int(np.ceil(10*self.mean_degree)))):
-                curr_layer = []
-                for node in primary_layer_view[i]:
-                    # If the node is already completed, do not consider it for the
-                    # heuristic
-                    if node in completed_nodes:
-                        continue
-                    # Otherwise, add it
-                    q0, q1 = node.qargs
-                    if q0 in visited or q1 in visited:
-                        visited.add(q0)
-                        visited.add(q1)
-                        continue
-                    visited.add(q0)
-                    visited.add(q1)
-                    curr_layer.append(node)
-                if primary_layer_view[i]:
-                    post_primary_layer_view.append(curr_layer)
-
+        post_primary_layer_view = self.compute_post_primary(
+            primary_layer_view, 
+            completed_nodes
+        )
+    
         # Process operations in layer
         for node in secondary_layer_view[0]:
             if node in completed_nodes:
@@ -391,6 +389,87 @@ class ForeSight(TransformationPass):
                 completed_nodes
             ))
         return solutions
+
+    def excavate(
+        self,
+        dag,
+        primary_layer_view,
+        secondary_layer_view,
+        current_layout,
+        canonical_register,
+        completed_nodes
+    ):
+        front_layer = [x for x in primary_layer_view[0]\
+                         if x not in completed_nodes]         
+        excavator = ForeSightExcavator(
+            front_layer,
+            dag,
+            completed_nodes,
+            critical_point=self.excavate_point
+        )
+        curr_solution = ShallowSolveSolution([], current_layout, 0, completed_nodes)
+        oplist = excavator.excavate(current_layout, self.paths_on_arch)
+        if oplist is None:
+            return None
+        # Continue excavating until we are below the critical point, or if there
+        # is nothing to excavate.
+        while oplist is not None:
+            # Now use shallow solve policy to route oplist
+            new_primary_layer_view = copy(primary_layer_view)
+            new_secondary_layer_view = copy(secondary_layer_view)
+            for node in oplist:
+                if len(node.qargs) == 2:
+                    new_primary_layer_view.appendleft([node])
+                    new_secondary_layer_view.appendleft([])
+                else:
+                    new_primary_layer_view.appendleft([])
+                    new_secondary_layer_view.appendleft([node])
+            for i in range(len(oplist)):
+                solutions = self.shallow_solve( 
+                    new_primary_layer_view,
+                    new_secondary_layer_view,
+                    curr_solution.layout, 
+                    canonical_register,
+                    curr_solution.completed_nodes
+                )
+                # Choose a random solution
+                shallow_solve_soln = solutions[np.random.randint(0,high=len(solutions))]
+                # Update current solution
+                curr_solution.output_layers.extend(shallow_solve_soln.output_layers)
+                curr_solution.layout = shallow_solve_soln.layout
+                curr_solution.num_swaps += shallow_solve_soln.num_swaps
+                curr_solution.completed_nodes = shallow_solve_soln.completed_nodes
+            # Check for something to excavate
+            oplist = excavator.excavate(curr_solution.layout, self.paths_on_arch)
+        return curr_solution
+
+    def compute_post_primary(self, primary_layer_view, completed_nodes):
+        if len(primary_layer_view) == 1:
+            post_primary_layer_view = []
+        else:
+            post_primary_layer_view = []
+            visited = set()
+            # The post primary layer is composed the first 2-qubit operation for each qubit
+            # in the circuit. The maximum size of the post primary layer is NQUBITS/2.
+            for i in range(1, min(len(primary_layer_view), int(np.ceil(10*self.mean_degree)))):
+                curr_layer = []
+                for node in primary_layer_view[i]:
+                    # If the node is already completed, do not consider it for the
+                    # heuristic
+                    if node in completed_nodes:
+                        continue
+                    # Otherwise, add it
+                    q0, q1 = node.qargs
+                    if q0 in visited or q1 in visited:
+                        visited.add(q0)
+                        visited.add(q1)
+                        continue
+                    visited.add(q0)
+                    visited.add(q1)
+                    curr_layer.append(node)
+                if primary_layer_view[i]:
+                    post_primary_layer_view.append(curr_layer)
+        return post_primary_layer_view
 
     def path_find_and_fold(self, v0, v1, post_primary_layer_view, current_layout):
         p0, p1 = current_layout[v0], current_layout[v1]
