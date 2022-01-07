@@ -59,8 +59,6 @@ def _floyd_warshall(coupling_map, edge_weights=None, noisy_weights=False):
                     if dist_array[i][j] > dist_array[i][k] + dist_array[k][j]:
                         dist_array[i][j] = dist_array[i][k] + dist_array[k][j]
                         next_array[i][j] = next_array[i][k]
-    print(np.array(dist_array))
-    print(np.array(next_array))
     return dist_array, next_array
 
 def _get_path(source, sink, next_array):

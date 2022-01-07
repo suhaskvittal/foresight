@@ -39,7 +39,7 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
     if kwargs['noisy']:
         compare = ['sabre', 'foresight']
     elif dataset == 'zulehner':
-        compare = ['sabre', 'foresight', 'ssonly', 'a*']
+        compare = ['sabre', 'foresight', 'foresight_ssonly', 'a*']
     else:
         compare = ['sabre', 'foresight', 'a*']
     benchmark_pass = BenchmarkPass(coupling_map, arch_file, runs=runs, compare=compare, compute_stats=False, **kwargs)
@@ -122,6 +122,38 @@ if __name__ == '__main__':
         'solncap': G_FORESIGHT_SOLN_CAP,
         'noise_factor': 1.0
     }
+    
+    if argv[1] == '-h':  # print out help
+        print('Usage:')
+        print('\t--nosim = do not simulate after routing.')
+        print('\t--debug = print out debug messages.')
+        print('\t--noisy = perform noisy routing (along with simulation if asked) -- only supported for Google Sycamore, Weber Architecture.')
+        print('\t--mem = measure memory usage (increases time taken).')
+        print('\t--dataset <d> where d is one of')
+        print('\t\tzulehner (circuits used by Zulehner et al. in the A* paper)')
+        print('\t\tzulehner_partial (a small selection of Zulehner et al.\'s circuits)')
+        print('\t\tmedium (a subset of the medium circuits from the QASMBENCH suite)')
+        print('\t\tlarge (a subset of the large circuits from the QASMBENCH suite)')
+        print('\t\tqaoask (Sherrington-Kirkpatrik QAOA circuits)')
+        print('\t\tqaoa3rl (QAOA circuits for 3-regular graphs -- max size is 20 qubits)')
+        print('\t\tqaoa3rvl (QAOA circuits for 3-regular graphs using around 100 qubits)')
+        print('\t\tbvl (Bernstein-Vazirani circuits up to 50 qubits)')
+        print('\t\tbvvl (Bernstein-Vazirani circuits up to 500 qubits)')
+        print('\t--runs <r> where r is the number of trials for each circuit')
+        print('\t--coupling <backend> where backend is one of')
+        print('\t\ttoronto (IBMQ Toronto -- 27 qubits)')
+        print('\t\tweber (Google Sycamore, Weber Architecture -- 50 qubits)')
+        print('\t\taspen9 (Rigetti Aspen9 -- 30 qubits)')
+        print('\t\ttokyo (IBMQ Tokyo -- 20 qubits)')
+        print('\t\t100grid (Grid of 100 qubits)')
+        print('\t\t500grid (Grid of 500 qubits)')
+        print('\t\t3heavyhex (IBM\'s presented sub-architecture for their Eagle QPU)')
+        print('\t--output-file <file> where file is the name of the result file.')
+        print('\t--slack <s> where s is the slack parameter used in ForeSight path identification.')
+        print('\t--solncap <s> where s is the computation tree limit.')
+        print('\t--noise-scale <f> where f is a factor by which to multiply noise effects.')
+        exit()
+
     i = 1
     while i < len(argv):
         arg = argv[i]
