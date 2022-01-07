@@ -9,7 +9,7 @@ from qiskit.dagcircuit import DAGOpNode
 from collections import defaultdict
 from copy import copy
 
-class Excavator:
+class ForeSightExcavator:
     def __init__(self, front_layer, dag):
         self._pred = defaultdict(int)
         self.front_layer = copy(front_layer)

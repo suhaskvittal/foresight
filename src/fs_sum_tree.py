@@ -9,3 +9,10 @@ class SumTreeNode:
 		self.sum_data = sum_data
 		self.parent = parent
 		self.children = children
+
+class MinLeafPackage:
+    def __init__(self, leaf_node, leaf_sum, layout, completed_nodes):
+        self.leaf_node = leaf_node
+        self.leaf_sum = leaf_sum
+        self.layout = layout
+        self.completed_nodes = completed_nodes

@@ -128,7 +128,7 @@ if __name__ == '__main__':
         print('\t--nosim = do not simulate after routing.')
         print('\t--debug = print out debug messages.')
         print('\t--noisy = perform noisy routing (along with simulation if asked) -- only supported for Google Sycamore, Weber Architecture.')
-        print('\t--mem = measure memory usage (increases time taken).')
+        print('\t--nomem = do not measure memory usage (decreases time taken).')
         print('\t--dataset <d> where d is one of')
         print('\t\tzulehner (circuits used by Zulehner et al. in the A* paper)')
         print('\t\tzulehner_partial (a small selection of Zulehner et al.\'s circuits)')

@@ -12,8 +12,10 @@ from qiskit.circuit.library import CXGate, SwapGate, Measure
 
 from fs_layerview import LayerViewPass
 from fs_selector import ForeSightSelector
-from fs_sum_tree import SumTreeNode
+from fs_excavator import ForeSightExcavator
+from fs_sum_tree import SumTreeNode, MinLeafPackage
 from fs_dist import process_coupling_map
+from fs_multipath import ComputationKernel, DeepSolveSolution, ShallowSolveSolution
 
 import numpy as np
 
@@ -75,7 +77,7 @@ class ForeSight(TransformationPass):
         solutions = self.deep_solve(
             primary_layer_view, 
             secondary_layer_view, 
-            [(current_layout, [], 0)], 
+            [DeepSolveSolution([], current_layout, 0, set())],
             canonical_register 
         )
 
@@ -84,7 +86,9 @@ class ForeSight(TransformationPass):
         min_layout = None
         min_size = -1
         min_depth = -1
-        for (layout, soln, size) in solutions:
+        for deep_solve_soln in solutions:
+            layout, soln, size =\
+                deep_solve_soln.layout, deep_solve_soln.output_layers, deep_solve_soln.layer_sum
             depth = len(soln)
             if min_solution is None or (size < min_size) or (size == min_size and depth < min_depth):
                 min_layout = layout
@@ -99,9 +103,10 @@ class ForeSight(TransformationPass):
         for layer in min_solution:
             for node in layer:
                 mapped_dag.apply_operation_back(op=node.op, qargs=node.qargs, cargs=node.cargs)
-        # validate mapped dag (SWAPs already validated -- ops are valid, just check if all ops are there)
+        # Validate mapped dag (SWAPs already validated -- ops are valid, just check if all ops are there)
         orig_ops = dag.count_ops()
         mapped_ops = mapped_dag.count_ops()
+        # Self-verify that no operations have been skipped.
         for g in orig_ops:
             if orig_ops[g] != mapped_ops[g]:
                 print('Error! Unequal non-SWAP gates after routing.')
@@ -122,11 +127,22 @@ class ForeSight(TransformationPass):
         # Build tree of output layers.
         solver_queue = []
         leaves = []
-        for (i, (base_layout, base_output_layers, base_sum)) in enumerate(base_solver_queue):
-            root_node = SumTreeNode(base_output_layers, base_sum, None, [])  
+        for (i, deep_solve_soln) in enumerate(base_solver_queue):
+            root_node = SumTreeNode(
+                deep_solve_soln.output_layers,
+                deep_solve_soln.layer_sum,
+                None,
+                []
+            )  
             leaves.append(root_node)
-            solver_queue.append((base_layout, i))
-        look = 0
+            # Each solution instance is a "computation kernel".
+            # We perform deep solve on a tree of kernels by performing
+            # shallow solve until some critical point.
+            solver_queue.append(ComputationKernel(
+                deep_solve_soln.layout,
+                i,
+                deep_solve_soln.completed_nodes
+            ))
         while len(solver_queue) <= 2*self.solution_cap:
             if self.debug:
                 print('Layer Number:', len(primary_layer_view))
@@ -135,50 +151,78 @@ class ForeSight(TransformationPass):
                 break
             next_solver_queue = []
             next_leaves = []
-            for (current_layout, parent_id) in solver_queue:  # Empty out queue into next_solver_queue.
-                parent = leaves[parent_id]
+            for compkern in solver_queue:  # Empty out queue into next_solver_queue.
+                parent = leaves[compkern.parent_id]
                 # Find parent corresponding to parent id.
                 solutions = self.shallow_solve(
                     primary_layer_view,
                     secondary_layer_view,
-                    current_layout,
-                    canonical_register
+                    compkern.layout,
+                    canonical_register,
+                    compkern.completed_nodes
                 )
                 # Apply solutions non-deterministically to current_dag.
-                for (i, (output_layers, new_layout, num_swaps)) in enumerate(solutions):
+                for (i, shallow_solve_soln) in enumerate(solutions):
                     # Create node for each candidate solution.
-                    node = SumTreeNode(output_layers, parent.sum_data + num_swaps, parent, []) 
+                    node = SumTreeNode(
+                        shallow_solve_soln.output_layers,
+                        parent.sum_data + shallow_solve_soln.num_swaps,
+                        parent,
+                        []
+                    )
                     parent.children.append(node)
                     next_leaves.append(node)
-                    next_solver_queue.append((new_layout, len(next_leaves) - 1))
+                    # Create a child kernel
+                    next_solver_queue.append(ComputationKernel(
+                        shallow_solve_soln.layout,
+                        len(next_leaves) - 1,
+                        shallow_solve_soln.completed_nodes
+                    ))
             solver_queue = next_solver_queue
             leaves = next_leaves
             primary_layer_view.popleft()
             secondary_layer_view.popleft()
-            look += 1
+        # The critical point has been reached -- we contract the computation tree.
         # Now, we simply check the leaves of the output layer tree. We select the leaf with the minimum sum.
         min_leaves = []
         min_sum = -1
         for (i, leaf) in enumerate(leaves):
-            layout, _ = solver_queue[i]
+            shallow_solve_soln  = solver_queue[i]
             if min_sum < 0 or leaf.sum_data < min_sum:
-                min_leaves = [(leaf, layout, leaf.sum_data)]
+                min_leaves = [MinLeafPackage(
+                    leaf,
+                    leaf.sum_data,
+                    shallow_solve_soln.layout,
+                    shallow_solve_soln.completed_nodes
+                )] 
                 min_sum = leaf.sum_data
             elif leaf.sum_data == min_sum:
-                min_leaves.append((leaf, layout, leaf.sum_data))
-        # Now that we know the best leaves, we simply just need to build the corresponding dags.
-        # Traverse up the leaves -- there is only one path to a root.
+                min_leaves.append(MinLeafPackage(
+                    leaf,
+                    leaf.sum_data,
+                    shallow_solve_soln.layout,
+                    shallow_solve_soln.completed_nodes
+                )) 
+        # If we have too many minleaves, then randomly choose a subset of them.
         if len(min_leaves) > self.solution_cap:
             min_leaf_indices = np.random.choice(np.arange(len(min_leaves)), size=self.solution_cap)
             min_leaves = [min_leaves[i] for i in min_leaf_indices]
+        # Now that we know the best leaves, we simply just need to build the corresponding dags.
+        # Traverse up the leaves -- there is only one path to a root.
         min_solutions = []
-        for (leaf, layout, leaf_sum) in min_leaves:
+        for min_leaf in min_leaves:
             output_layer_deque = deque([])
-            curr = leaf
+            curr = min_leaf.leaf_node
             while curr != None:
                 output_layer_deque.extendleft(list(curr.obj_data)[::-1])
                 curr = curr.parent
-            min_solutions.append((layout, output_layer_deque, leaf_sum))
+            # Package the solution as a DeepSolveSolution
+            min_solutions.append(DeepSolveSolution(
+                output_layer_deque,
+                min_leaf.layout,
+                min_leaf.leaf_sum,
+                min_leaf.completed_nodes
+            ))
         return self.deep_solve(primary_layer_view, secondary_layer_view, min_solutions, canonical_register)
                 
     def shallow_solve(
@@ -186,15 +230,24 @@ class ForeSight(TransformationPass):
         primary_layer_view,
         secondary_layer_view,
         current_layout,
-        canonical_register
+        canonical_register,
+        completed_nodes
     ):
+        # Initialize all structures
         output_layers = [[]]
         starting_output_layer = 1
         
         target_list = []
         path_collection_list = []
-        post_ops = []
-        target_to_op = {}
+        post_nodes = []
+        target_to_node = {}
+
+        # Copy the set of completed nodes
+        # as the set will be used across multiple
+        # computation kernels.
+        original_completed = completed_nodes 
+        completed_nodes = copy(completed_nodes)
+
         # Only execute operations in current layer.
         # Define post primary layer view
         if len(primary_layer_view) == 1:
@@ -202,9 +255,16 @@ class ForeSight(TransformationPass):
         else:
             post_primary_layer_view = []
             visited = set()
+            # The post primary layer is composed the first 2-qubit operation for each qubit
+            # in the circuit. The maximum size of the post primary layer is NQUBITS/2.
             for i in range(1, min(len(primary_layer_view), int(np.ceil(10*self.mean_degree)))):
                 curr_layer = []
                 for node in primary_layer_view[i]:
+                    # If the node is already completed, do not consider it for the
+                    # heuristic
+                    if node in completed_nodes:
+                        continue
+                    # Otherwise, add it
                     q0, q1 = node.qargs
                     if q0 in visited or q1 in visited:
                         visited.add(q0)
@@ -217,27 +277,32 @@ class ForeSight(TransformationPass):
                     post_primary_layer_view.append(curr_layer)
 
         # Process operations in layer
-        for op in secondary_layer_view[0]:
-            output_layers[0].append(self._remap_gate_for_layout(op, current_layout, canonical_register))
+        for node in secondary_layer_view[0]:
+            if node in completed_nodes:
+                continue
+            output_layers[0].append(self._remap_gate_for_layout(node, current_layout, canonical_register))
+            completed_nodes.add(node)  # preemptively add the node -- we will place it anyways.
         front_layer = primary_layer_view[0]
-        for op in front_layer:  
-            q0, q1 = op.qargs
+        for node in front_layer:  
+            if node in completed_nodes:
+                continue
+            q0, q1 = node.qargs
             # Filter out all operations that are currently adjacent.
             if self.coupling_map.graph.has_edge(current_layout[q0], current_layout[q1]):
-                output_layers[0].append(self._remap_gate_for_layout(op, current_layout, canonical_register))
+                output_layers[0].append(self._remap_gate_for_layout(node, current_layout, canonical_register))
             else:  # Otherwise, get path candidates and place it in path_collection_list.
                 path_collection_list.append(self.path_find_and_fold(q0, q1, post_primary_layer_view, current_layout))
-                post_ops.append(op)
+                post_nodes.append(node)
                 target_list.append((q0, q1))
-                target_to_op[(q0, q1)] = op
+                target_to_node[(q0, q1)] = node
+            completed_nodes.add(node)  # preemptively add the node -- we will place it anyways.
 
         # Build PPC and get candidate list.
         if len(path_collection_list) == 0:
-            return [(output_layers, current_layout, 0)] 
+            return [ShallowSolveSolution(output_layers, current_layout, 0, completed_nodes)]
         path_selector = ForeSightSelector(path_collection_list, len(self.coupling_map.physical_qubits), len(path_collection_list))
         candidate_list, suggestions = path_selector.find_and_join(self, target_list, current_layout, post_primary_layer_view)
         if candidate_list is None:  # We failed, take the suggestions.
-            
             tmp_pl_view = deepcopy(primary_layer_view)
             tmp_sl_view = deepcopy(secondary_layer_view)
             # Remove top layer from both views.
@@ -250,23 +315,29 @@ class ForeSight(TransformationPass):
                     continue
                 target_sub_list = [target_list[i] for i in index_list]
                 target_lists.append(target_sub_list)
-                tmp_pl_view.appendleft([target_to_op[target] for target in target_sub_list])
+                tmp_pl_view.appendleft([target_to_node[target] for target in target_sub_list])
                 tmp_sl_view.appendleft([])
-            solutions = [(output_layers, current_layout, 0)]
+            solutions = [ShallowSolveSolution(output_layers, current_layout, 0, set())]
             while target_lists:
                 target_sub_list = target_lists.pop()
                 next_solutions = []
-                for (prev_layers, prev_layout, prev_swaps) in solutions:
+                for prev_soln in solutions:
                     solution_list = self.shallow_solve(
                         tmp_pl_view,
                         tmp_sl_view,
-                        prev_layout,
-                        canonical_register
+                        prev_soln.layout,
+                        canonical_register,
+                        original_completed
                     )
-                    for (layers, layout, num_swaps) in solution_list:
-                        prev_layers_cpy = copy(prev_layers)
-                        prev_layers_cpy.extend(layers)
-                        next_solutions.append((prev_layers_cpy, layout, prev_swaps+num_swaps))
+                    for new_soln in solution_list:
+                        prev_layers_cpy = copy(prev_soln.output_layers)
+                        prev_layers_cpy.extend(new_soln.output_layers)
+                        next_solutions.append(ShallowSolveSolution(
+                            prev_layers_cpy,
+                            new_soln.layout,
+                            prev_soln.num_swaps+new_soln.num_swaps,
+                            completed_nodes
+                        ))
                 tmp_pl_view.popleft()
                 tmp_sl_view.popleft()
 
@@ -301,8 +372,9 @@ class ForeSight(TransformationPass):
                     num_swaps += 1
             # Apply the operations after completing all the swaps.
             output_layers_cpy.append([])
-            for op in post_ops:  
-                q0, q1 = op.qargs
+            for node in post_nodes:  
+                q0, q1 = node.qargs
+                # Self-verify that proper routing is occurring.
                 if not self.coupling_map.graph.has_edge(new_layout[q0], new_layout[q1]):
                     print('ERROR: not satisified %d(%d), %d(%d)'\
                         % (q0.index, current_layout[q0], q1.index, current_layout[q1]))
@@ -311,8 +383,13 @@ class ForeSight(TransformationPass):
                     print('|TargetSet| = %d' % len(target_list))
                     print('Solution: ', soln)
                     exit()
-                output_layers_cpy[-1].append(self._remap_gate_for_layout(op, new_layout, canonical_register))
-            solutions.append((output_layers_cpy, new_layout, num_swaps))  # Save layers to apply to DAG and corresponding layout.
+                output_layers_cpy[-1].append(self._remap_gate_for_layout(node, new_layout, canonical_register))
+            solutions.append(ShallowSolveSolution(
+                output_layers_cpy,
+                new_layout,
+                num_swaps,
+                completed_nodes
+            ))
         return solutions
 
     def path_find_and_fold(self, v0, v1, post_primary_layer_view, current_layout):
