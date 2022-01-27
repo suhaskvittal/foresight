@@ -27,7 +27,7 @@ class ForeSight(TransformationPass):
         coupling_map, 
         slack=2,
         solution_cap=32,
-        excavate_point=2,
+        excavate=1,
         edge_weights=None,
         vertex_weights=None,
         readout_weights=None,
@@ -40,7 +40,6 @@ class ForeSight(TransformationPass):
         self.slack = slack
         self.coupling_map = coupling_map        
         self.solution_cap = solution_cap
-        self.excavate_point = excavate_point
         self.depth_min = depth_minimize
         self.noisy_routing = noisy_routing
 
@@ -51,6 +50,10 @@ class ForeSight(TransformationPass):
             noisy_weights=noisy_routing
         ) 
         self.mean_degree = len(self.coupling_map.get_edges()) / self.coupling_map.size()
+        if excavate < 0:
+            self.excavate_point = -1
+        else:
+            self.excavate_point = int(np.floor(self.mean_degree**1.5))
 
         self.fake_run = False
         self.debug = debug
@@ -59,6 +62,10 @@ class ForeSight(TransformationPass):
         self.edge_weights = edge_weights
         self.vertex_weights = vertex_weights
         self.readout_weights = readout_weights
+
+        # usage statistics
+        self.excavations = 0
+        self.suggestions = 0
             
     def run(self, dag):
         mapped_dag = dag._copy_circuit_metadata()
@@ -115,6 +122,10 @@ class ForeSight(TransformationPass):
                 print('Error! Unequal non-SWAP gates after routing.')
                 print('Original circuit: ', orig_ops)
                 print('Mapped circuit: ', mapped_ops)
+        if self.debug:
+            print('Statistics')
+            print('\tExcavator usage:', self.excavations)
+            print('\tSuggestion usage:', self.suggestions)
         return mapped_dag
     
     def deep_solve(
@@ -148,9 +159,6 @@ class ForeSight(TransformationPass):
                 deep_solve_soln.completed_nodes
             ))
         while len(solver_queue) <= 2*self.solution_cap:
-            if self.debug:
-                print('Layer Number:', len(primary_layer_view))
-                print('\tSolver Queue Size:', len(solver_queue))
             if len(primary_layer_view) == 0:
                 break
             next_solver_queue = []
@@ -158,20 +166,21 @@ class ForeSight(TransformationPass):
             for compkern in solver_queue:  # Empty out queue into next_solver_queue.
                 parent = leaves[compkern.parent_id]
                 # First, try to excavate for the current computation kernel.
-                excsoln = self.excavate(
-                    dag,
-                    primary_layer_view,
-                    secondary_layer_view,
-                    compkern.layout,
-                    canonical_register,
-                    compkern.completed_nodes
-                )
-                if excsoln is not None:
-                    # Update this compkern
-                    compkern.layout = excsoln.layout
-                    compkern.completed_nodes = excsoln.completed_nodes
-                    # Update the parent tree node as well
-                    parent.obj_data.extend(excsoln.output_layers)
+                if self.excavate_point > 0:
+                    excsoln = self.excavate(
+                        dag,
+                        primary_layer_view,
+                        secondary_layer_view,
+                        compkern.layout,
+                        canonical_register,
+                        compkern.completed_nodes
+                    )
+                    if excsoln is not None:
+                        # Update this compkern
+                        compkern.layout = excsoln.layout
+                        compkern.completed_nodes = excsoln.completed_nodes
+                        # Update the parent tree node as well
+                        parent.obj_data.extend(excsoln.output_layers)
 
                 solutions = self.shallow_solve(
                     primary_layer_view,
@@ -301,6 +310,8 @@ class ForeSight(TransformationPass):
         path_selector = ForeSightSelector(path_collection_list, len(self.coupling_map.physical_qubits), len(path_collection_list))
         candidate_list, suggestions = path_selector.find_and_join(self, target_list, current_layout, post_primary_layer_view)
         if candidate_list is None:  # We failed, take the suggestions.
+            self.suggestions += 1
+
             tmp_pl_view = deepcopy(primary_layer_view)
             tmp_sl_view = deepcopy(secondary_layer_view)
             # Remove top layer from both views.
@@ -399,49 +410,27 @@ class ForeSight(TransformationPass):
         canonical_register,
         completed_nodes
     ):
-        front_layer = [x for x in primary_layer_view[0]\
+        exc_front_layer = [x for x in primary_layer_view[0]\
                          if x not in completed_nodes]         
+        exc_front_layer.extend([
+            x for x in secondary_layer_view[0]\
+                if x not in completed_nodes
+        ])
         excavator = ForeSightExcavator(
-            front_layer,
+            exc_front_layer,
             dag,
             completed_nodes,
             critical_point=self.excavate_point
         )
         curr_solution = ShallowSolveSolution([], current_layout, 0, completed_nodes)
-        oplist = excavator.excavate(current_layout, self.paths_on_arch)
-        if oplist is None:
+        exc_list = excavator.excavate(current_layout, self.paths_on_arch, df=int(self.slack+1))
+        if len(exc_list) == 0:
             return None
         # Continue excavating until we are below the critical point, or if there
         # is nothing to excavate.
-        while oplist is not None:
-            # Now use shallow solve policy to route oplist
-            new_primary_layer_view = copy(primary_layer_view)
-            new_secondary_layer_view = copy(secondary_layer_view)
-            for node in oplist:
-                if len(node.qargs) == 2:
-                    new_primary_layer_view.appendleft([node])
-                    new_secondary_layer_view.appendleft([])
-                else:
-                    new_primary_layer_view.appendleft([])
-                    new_secondary_layer_view.appendleft([node])
-            for i in range(len(oplist)):
-                solutions = self.shallow_solve( 
-                    new_primary_layer_view,
-                    new_secondary_layer_view,
-                    curr_solution.layout, 
-                    canonical_register,
-                    curr_solution.completed_nodes
-                )
-                # Choose a random solution
-                shallow_solve_soln = solutions[np.random.randint(0,high=len(solutions))]
-                # Update current solution
-                curr_solution.output_layers.extend(shallow_solve_soln.output_layers)
-                curr_solution.layout = shallow_solve_soln.layout
-                curr_solution.num_swaps += shallow_solve_soln.num_swaps
-                curr_solution.completed_nodes = shallow_solve_soln.completed_nodes
-            # Check for something to excavate
-            oplist = excavator.excavate(curr_solution.layout, self.paths_on_arch)
-        return curr_solution
+        self.excavations += 1
+        # Create DAG for exc_list (a sub dag), and then use an ASAP policy.
+        # This will use SABRE.
 
     def compute_post_primary(self, primary_layer_view, completed_nodes):
         if len(primary_layer_view) == 1:

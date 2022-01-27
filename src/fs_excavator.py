@@ -23,42 +23,50 @@ class ForeSightExcavator:
                 self._pred[y] += 1
 
     def excavate(self, current_layout, paths_on_arch, df=3):
-        if len(self.front_layer) < self.critical_point:
-            return None
-
-        usage_map = {x: self._get_usage_space(x, current_layout, paths_on_arch, df)\
-                        for x in self.front_layer}
-        intersection_score = {x: 0 for x in self.front_layer}
-        # Compute the total number of intersections with other usage spaces
-        for i in range(len(self.front_layer)):
-            x = self.front_layer[i]
-            for j in range(i+1,len(self.front_layer)): 
-                y = self.front_layer[j]
-                number_of_intersects = len(usage_map[x].intersection(usage_map[y]))
-                intersection_score[x] += number_of_intersects
-                intersection_score[y] += number_of_intersects
-        # Get the node that has the most intersections.
-        max_node_index = 0
-        max_node = self.front_layer[0]
-        for i in range(1, len(self.front_layer)):
-            node = self.front_layer[i]
-            if intersection_score[max_node] < intersection_score[node]:
-                max_node_index = i
-                max_node = node
-        if intersection_score[max_node] == 0:
-            return None
-        del self.front_layer[i]
-        oplist = self._get_oplist(max_node)
-        for node in oplist:
-            for (_,x,edge_data) in self.dag.edges(node):
+        exc_list = []
+        while True:
+            usage_map = {x: self._get_usage_space(x, current_layout, paths_on_arch, df)\
+                            for x in self.front_layer}
+            intersection_score = {x: 0 for x in self.front_layer}
+            # First, check if there are any 1 qubit operations in the front layer. Finish those first.
+            max_node = None
+            max_node_index = -1
+            for i in range(len(self.front_layer)):
+                x = self.front_layer[i]
+                if len(x.qargs) == 1:
+                    max_node = x
+                    max_node_index = i
+                    break
+            if max_node is None:
+                if len(self.front_layer) < self.critical_point:
+                    break
+                # Compute the total number of intersections with other usage spaces
+                for i in range(len(self.front_layer)):
+                    x = self.front_layer[i]
+                    for j in range(i+1,len(self.front_layer)): 
+                        y = self.front_layer[j]
+                        number_of_intersects = len(usage_map[x].intersection(usage_map[y]))
+                        intersection_score[x] += number_of_intersects
+                        intersection_score[y] += number_of_intersects
+                # Get the node that has the most intersections.
+                max_node_index = 0
+                max_node = self.front_layer[0]
+                for i in range(1, len(self.front_layer)):
+                    node = self.front_layer[i]
+                    if intersection_score[max_node] < intersection_score[node]:
+                        max_node_index = i
+                        max_node = node
+                if intersection_score[max_node] == 0:
+                    break
+            del self.front_layer[max_node_index]
+            for (_,x,edge_data) in self.dag.edges(max_node):
                 if not (isinstance(x, DAGOpNode) and isinstance(edge_data,Qubit)):
                     continue
                 self._pred[x] += 1
-                if len(x.qargs) == 2\
-                and self._pred[x] == len(x.qargs)\
-                and x not in oplist:
+                if self._pred[x] == len(x.qargs):
                     self.front_layer.append(x)
-        return oplist
+            exc_list.append(max_node)
+        return exc_list
 
     def _get_oplist(self, node):
         # oplist is a list of all immediately satisfiable ops
@@ -91,7 +99,7 @@ class ForeSightExcavator:
         # longer paths (1 = only shortest path, 2 = shortest
         # path and next shortest path, etc.)
         for x in oplist:
-            if len(x.qargs) == 1:
+            if len(x.qargs) != 2:
                 continue
             q0,q1 = x.qargs
             p0,p1 = current_layout[q0], current_layout[q1]
