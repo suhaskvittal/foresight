@@ -72,7 +72,6 @@ class BenchmarkPass(AnalysisPass):
         self.foresight_router = ForeSight(
                 coupling_map,
                 slack=slack,
-                excavate=-1,
                 solution_cap=solution_cap,
                 debug=kwargs['debug']
         )
@@ -87,16 +86,8 @@ class BenchmarkPass(AnalysisPass):
                 coupling_map,
                 slack=slack,
                 solution_cap=1,
-                excavate=-1,
                 debug=kwargs['debug'],
-                edge_weights=edge_weights,
-                noisy_routing=kwargs['noisy']
-        )
-        self.foresight_exc_router = ForeSight(
-                coupling_map,
-                slack=slack,
-                solution_cap=solution_cap,
-                debug=kwargs['debug']
+                edge_weights=edge_weights
         )
         self.qiskit_benchmark_passes = {
             'sabre': ('SABRE', PassManager([
@@ -113,10 +104,6 @@ class BenchmarkPass(AnalysisPass):
                     ])),
             'foresight_noisy': ('Noisy ForeSight',PassManager([
                         self.noisy_foresight_router,
-                        Unroller(self.basis_gates)
-                    ])),
-            'foresight_exc': ('ForeSight with Excavate',PassManager([
-                        self.foresight_exc_router,
                         Unroller(self.basis_gates)
                     ])),
         }

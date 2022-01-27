@@ -10,8 +10,18 @@ from fs_util import _path_to_swap_collection, _soln_hash_f
 import numpy as np
 
 class ForeSightSelector:
-    def __init__(self, path_collection_list, num_vertices, num_sources):
-        self.num_vertices = num_vertices
+    def __init__(self, path_collection_list, num_sources):
+        """
+            The ForeSightSelector implements a dynamic programming
+            selection procedure that tries to greedily merge paths 
+            together and compute solutions for a layer. If there is no
+            solution, then based on the observations of the selector,
+            we return a division of the given layer that will be 
+            satisfiable.
+
+            path_collection_list: list of all paths to choose from
+            num_sources: number of unsatisfied qubits in the layer
+        """
         self.num_sources = num_sources
         self.path_collection_list = path_collection_list
         self.pqueues = [PathPriorityQueue.buildheap(path_collection_list[i]) for i in range(num_sources)]

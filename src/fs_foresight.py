@@ -12,7 +12,6 @@ from qiskit.circuit.library import CXGate, SwapGate, Measure
 
 from fs_layerview import LayerViewPass
 from fs_selector import ForeSightSelector
-from fs_excavator import ForeSightExcavator
 from fs_sum_tree import SumTreeNode, MinLeafPackage
 from fs_dist import process_coupling_map
 from fs_multipath import ComputationKernel, DeepSolveSolution, ShallowSolveSolution
@@ -27,33 +26,37 @@ class ForeSight(TransformationPass):
         coupling_map, 
         slack=2,
         solution_cap=32,
-        excavate=1,
         edge_weights=None,
         vertex_weights=None,
         readout_weights=None,
-        depth_minimize=False,
-        noisy_routing=False,
         debug=False
     ):
+        """
+            Initializes ForeSight pass.
+
+            coupling_map: backend coupling graph
+            slack: expands path consideration. If slack=0, then shortest paths are
+                considered. If slack=1, then shortest and second shortest paths are 
+                considered. (etc.)
+            solution_cap: caps size of the computation tree. Tree is contracted
+                if treewidth exceeds 2*solution_cap.
+            edge_weights: weights for noisy computation.
+            vertex_weights: weights for noisy computation. (UNUSED)
+            readout_weights: weights for noisy computation. (UNUSED)
+            debug: output debug messages 
+        """
         super().__init__()
 
         self.slack = slack
         self.coupling_map = coupling_map        
         self.solution_cap = solution_cap
-        self.depth_min = depth_minimize
-        self.noisy_routing = noisy_routing
 
         self.distance_matrix, self.paths_on_arch = process_coupling_map(
             coupling_map,
             slack,
             edge_weights=edge_weights,
-            noisy_weights=noisy_routing
         ) 
         self.mean_degree = len(self.coupling_map.get_edges()) / self.coupling_map.size()
-        if excavate < 0:
-            self.excavate_point = -1
-        else:
-            self.excavate_point = int(np.floor(self.mean_degree**1.5))
 
         self.fake_run = False
         self.debug = debug
@@ -68,6 +71,19 @@ class ForeSight(TransformationPass):
         self.suggestions = 0
             
     def run(self, dag):
+        """
+            Compiler pass main method. 
+            We do the following:
+                (1) Compute the primary layer view and secondary
+                    layer view.
+                (2) Run deep solve on the given dag.
+                (3) Given the outputs from deep solve, we evaluate
+                    each solution by observing the output size
+                    and depth. We prioritize lower size over lower
+                    depth.
+                (4) We then finally route based on the proposed
+                    solution and return the result.
+        """
         mapped_dag = dag._copy_circuit_metadata()
         canonical_register = dag.qregs["q"]
         current_layout = Layout.generate_trivial_layout(canonical_register)
@@ -136,6 +152,38 @@ class ForeSight(TransformationPass):
         base_solver_queue, 
         canonical_register 
     ):
+        """
+            Deep solve portion. Maintains the computation tree. Deep
+            solve maintains a list of ComputationKernels in its
+            solver queue (each represent a potential solution). Once
+            the queue of computation kernels grows to large, Deep Solve
+            traverse upwards to the original computation kernel and 
+            collapse all the data down to the current kernels (contracting
+            the computation tree). Once this finishes, deep solve will
+            call itself to restart the process with the remaining
+            computation kernels as the new original kernels.
+
+            This process can be represented as a tree, where each
+            computation kernel is a node in the tree. Then, the entire
+            process of contracting the tree traverses up to the root and
+            "flattens" the tree to the kernels at the leaves.
+
+            Each solution from deep solve contains
+                (1) A list of operations in a BFS-like list.
+                (2) The number of SWAPs in the list.
+                (3) A current layout.
+                (4) The completed nodes set.
+            This is identical to a ShallowSolveSolution, but we use a 
+            different name to differentiate the usage of both solutions.
+
+            dag: the base circuit's dag representation.
+            primary_layer_view: a BFS view of all 2-qubit operations
+            secondary_layer_view: a BFS view of all other operations
+            base_solver_queue: holds current solutions for routing
+            canonical_register: necessary for routing correctly
+
+            Returns: a list of DeepSolveSolutions.
+        """
         if len(primary_layer_view) == 0:
             return base_solver_queue
 
@@ -261,6 +309,36 @@ class ForeSight(TransformationPass):
         canonical_register,
         completed_nodes
     ):
+        """
+            Performs actual routing and node marking.
+
+            Shallow solve first identifies unsatisfied 2-qubit
+            operations in the layer and then tries to find SWAPs
+            that minimize depth and size. If there isn't a solution
+            that satisfies all unsatisfied 2-qubit operations, then
+            shallow solve splits up the layer into multiple layers
+            depending on analysis of the concurrent satisfiability 
+            (this is called "suggestion"). Then, it will run greedily
+            on these layers and stitch their results together. 
+
+            Regardless of whether the suggestion phase occurs or not,
+            shallow solve will return a list of ShallowSolveSolutions
+            that represent routing solutions to the topmost layer. Each
+            solution contains
+                (1) A list of operations in a BFS-like list.
+                (2) The number of SWAPs in the list.
+                (3) A new layout.
+                (4) A completed set.
+
+            primary_layer_view: BFS view of 2-qubit operations.
+            secondary_layer_view: BFS view of other operations.
+            current_layout: current running layout
+            canonical_register: necessary for routing correctly
+            completed_nodes: a set of nodes that have already been routed
+
+            Returns: a list of ShallowSolveSolutions that route the current
+                layer given the completed_nodes set.
+        """
         # Initialize all structures
         output_layers = [[]]
         starting_output_layer = 1
@@ -307,7 +385,7 @@ class ForeSight(TransformationPass):
         # Build PPC and get candidate list.
         if len(path_collection_list) == 0:
             return [ShallowSolveSolution(output_layers, current_layout, 0, completed_nodes)]
-        path_selector = ForeSightSelector(path_collection_list, len(self.coupling_map.physical_qubits), len(path_collection_list))
+        path_selector = ForeSightSelector(path_collection_list, len(path_collection_list))
         candidate_list, suggestions = path_selector.find_and_join(self, target_list, current_layout, post_primary_layer_view)
         if candidate_list is None:  # We failed, take the suggestions.
             self.suggestions += 1
@@ -401,38 +479,16 @@ class ForeSight(TransformationPass):
             ))
         return solutions
 
-    def excavate(
-        self,
-        dag,
-        primary_layer_view,
-        secondary_layer_view,
-        current_layout,
-        canonical_register,
-        completed_nodes
-    ):
-        exc_front_layer = [x for x in primary_layer_view[0]\
-                         if x not in completed_nodes]         
-        exc_front_layer.extend([
-            x for x in secondary_layer_view[0]\
-                if x not in completed_nodes
-        ])
-        excavator = ForeSightExcavator(
-            exc_front_layer,
-            dag,
-            completed_nodes,
-            critical_point=self.excavate_point
-        )
-        curr_solution = ShallowSolveSolution([], current_layout, 0, completed_nodes)
-        exc_list = excavator.excavate(current_layout, self.paths_on_arch, df=int(self.slack+1))
-        if len(exc_list) == 0:
-            return None
-        # Continue excavating until we are below the critical point, or if there
-        # is nothing to excavate.
-        self.excavations += 1
-        # Create DAG for exc_list (a sub dag), and then use an ASAP policy.
-        # This will use SABRE.
-
     def compute_post_primary(self, primary_layer_view, completed_nodes):
+        """
+            Computes the post primary layer view. A post primary layer
+            view (PPLV) is a subset of the primary layer view that contains
+            2-qubit operations such that for both qubits used in the 
+            operation, this is their first usage in the PPLV.
+            
+            primary_layer_view: the BFS-list of 2-qubit operations in the DAG
+            completed_nodes: a set of already-routed operations.
+        """
         if len(primary_layer_view) == 1:
             post_primary_layer_view = []
         else:
@@ -461,6 +517,19 @@ class ForeSight(TransformationPass):
         return post_primary_layer_view
 
     def path_find_and_fold(self, v0, v1, post_primary_layer_view, current_layout):
+        """
+            We will examine all pre-computed paths between the physical qubits
+            corresponding to v0 and v1. These were computed on pass instantiation
+            by the Floyd-Warshall algorithm. In order to minimize depth and 
+            reduce swaps, we fold paths so that the sequence of SWAPs applied 
+            minimizes distance to future operations.
+
+            v0: the source vertex
+            v1: the sink vertex
+            post_primary_layer_view: a BFS-list of future operations that helps
+                in deciding where to fold along a path.
+            current_layout: the current running layout during routing.
+        """
         p0, p1 = current_layout[v0], current_layout[v1]
         if self.coupling_map.graph.has_edge(p0, p1):
             return []
@@ -472,6 +541,14 @@ class ForeSight(TransformationPass):
         return path_folds
     
     def _path_minfold(self, path, current_layout, post_primary_layer_view):
+        """
+            Computes the minimum cost fold.
+
+            path: the path to fold
+            current_layout: the current running layout during routing
+            post_primary_layer_view: a BFS-list of future operations that
+                helps decide where to fold.
+        """
         min_dist = -1
         min_folds = []
         latest_layout = current_layout
@@ -526,6 +603,17 @@ class ForeSight(TransformationPass):
         post_primary_layer_view,
         verify_only=False
     ):
+        """
+            During computation, due to the approximate nature of certain
+            parts of ForeSight, we want to verify a given solution. We also
+            do not want to waste precious cycles, so if we need to compute
+            distance as well, we perform that in tandem.
+
+            soln: a proposed solution
+            target_list: the list of 2-qubit operations that must be satisfied
+            current_layout: the current running layout during routing
+            post_primary_layer_view: a BFS-list of future operations.
+        """
         if len(target_list) == 0:
             return True, 0
         test_layout = current_layout.copy()
@@ -546,12 +634,20 @@ class ForeSight(TransformationPass):
         if verify_only:
             dist = 0
         else:
-
             dist = self._distf(flattened_soln, size, post_primary_layer_view, test_layout)
-
         return True, dist
 
     def _distf(self, soln, soln_size, post_primary_layer_view, test_layout):
+        """
+            The distance heuristic function to determine the goodness of a
+            solution.
+
+            soln: the solution to evaluate
+            soln_size: total number of operations in the solution
+            post_primary_layer_view: a BFS-list of future operations.
+            test_layout: a trial layout used during routing that corresponds
+                to the given solution
+        """
         dist = 0.0
         num_ops = 0
         for r in range(0, len(post_primary_layer_view)):
@@ -563,21 +659,10 @@ class ForeSight(TransformationPass):
                 num_ops += 1
                 s = self.distance_matrix[p0][p1]
                 sub_sum += s
-            if self.depth_min:  
-                dist += sub_sum
-            else:
-                dist += sub_sum * np.exp(-(r/((self.mean_degree)**1.5))**2)
+            dist += sub_sum * np.exp(-(r/((self.mean_degree)**1.5))**2)
         if num_ops == 0:
             return 0
         else:
             dist = dist/num_ops
-            if self.noisy_routing:
-                # Compute overall probability of success
-                psuc = 1.0
-                for (p0,p1) in soln:
-                    psuc *= (1-self.edge_weights[(p0,p1)])**3
-                return psuc*dist
-            if self.depth_min:
-                return dist + soln_size
             return dist+soln_size*np.exp(-(num_ops/(self.mean_degree**1.5))) 
 
