@@ -39,9 +39,9 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
     if kwargs['noisy']:
         compare = ['sabre', 'foresight']
     elif dataset == 'zulehner':
-        compare = ['sabre', 'foresight', 'foresight_exc', 'a*']
+        compare = ['sabre', 'foresight', 'a*']
     else:
-        compare = ['sabre', 'foresight', 'foresight_exc', 'a*']
+        compare = ['sabre', 'foresight', 'a*']
     benchmark_pass = BenchmarkPass(coupling_map, arch_file, runs=runs, compare=compare, compute_stats=False, **kwargs)
     benchmark_pm = PassManager([
         basis_pass, 

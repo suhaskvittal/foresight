@@ -213,23 +213,6 @@ class ForeSight(TransformationPass):
             next_leaves = []
             for compkern in solver_queue:  # Empty out queue into next_solver_queue.
                 parent = leaves[compkern.parent_id]
-                # First, try to excavate for the current computation kernel.
-                if self.excavate_point > 0:
-                    excsoln = self.excavate(
-                        dag,
-                        primary_layer_view,
-                        secondary_layer_view,
-                        compkern.layout,
-                        canonical_register,
-                        compkern.completed_nodes
-                    )
-                    if excsoln is not None:
-                        # Update this compkern
-                        compkern.layout = excsoln.layout
-                        compkern.completed_nodes = excsoln.completed_nodes
-                        # Update the parent tree node as well
-                        parent.obj_data.extend(excsoln.output_layers)
-
                 solutions = self.shallow_solve(
                     primary_layer_view,
                     secondary_layer_view,
