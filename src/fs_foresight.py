@@ -7,7 +7,7 @@ from qiskit.circuit import Qubit
 
 from qiskit.transpiler.basepasses import TransformationPass
 from qiskit.transpiler.layout import Layout
-from qiskit.dagcircuit import DAGNode
+from qiskit.dagcircuit import DAGOpNode
 from qiskit.circuit.library import CXGate, SwapGate, Measure
 
 from fs_layerview import LayerViewPass
@@ -19,28 +19,29 @@ from fs_multipath import ComputationKernel, DeepSolveSolution, ShallowSolveSolut
 import numpy as np
 
 from copy import copy, deepcopy
-from collections import deque
+from collections import deque, defaultdict
 
 class ForeSight(TransformationPass):
     def __init__(self,
         coupling_map, 
         slack=2,
         solution_cap=32,
+        asap_boost=False,
         edge_weights=None,
         vertex_weights=None,
         readout_weights=None,
         debug=False
     ):
         """
-            Initializes ForeSight pass.
+        Initializes ForeSight pass.
 
-            coupling_map: backend coupling graph
-            slack: expands path consideration. If slack=0, then shortest paths are
-                considered. If slack=1, then shortest and second shortest paths are 
-                considered. (etc.)
-            solution_cap: caps size of the computation tree. Tree is contracted
-                if treewidth exceeds 2*solution_cap.
-            edge_weights: weights for noisy computation.
+        coupling_map: backend coupling graph
+        slack: expands path consideration. If slack=0, then shortest paths are
+            considered. If slack=1, then shortest and second shortest paths are 
+            considered. (etc.)
+        solution_cap: caps size of the computation tree. Tree is contracted
+            if treewidth exceeds 2*solution_cap.
+        edge_weights: weights for noisy computation.
             vertex_weights: weights for noisy computation. (UNUSED)
             readout_weights: weights for noisy computation. (UNUSED)
             debug: output debug messages 
@@ -57,6 +58,7 @@ class ForeSight(TransformationPass):
             edge_weights=edge_weights,
         ) 
         self.mean_degree = len(self.coupling_map.get_edges()) / self.coupling_map.size()
+        self.use_asap_boost = asap_boost
 
         self.fake_run = False
         self.debug = debug
@@ -67,7 +69,6 @@ class ForeSight(TransformationPass):
         self.readout_weights = readout_weights
 
         # usage statistics
-        self.excavations = 0
         self.suggestions = 0
             
     def run(self, dag):
@@ -140,7 +141,6 @@ class ForeSight(TransformationPass):
                 print('Mapped circuit: ', mapped_ops)
         if self.debug:
             print('Statistics')
-            print('\tExcavator usage:', self.excavations)
             print('\tSuggestion usage:', self.suggestions)
         return mapped_dag
     
@@ -214,6 +214,7 @@ class ForeSight(TransformationPass):
             for compkern in solver_queue:  # Empty out queue into next_solver_queue.
                 parent = leaves[compkern.parent_id]
                 solutions = self.shallow_solve(
+                    dag,
                     primary_layer_view,
                     secondary_layer_view,
                     compkern.layout,
@@ -286,6 +287,7 @@ class ForeSight(TransformationPass):
                 
     def shallow_solve(
         self, 
+        dag,
         primary_layer_view,
         secondary_layer_view,
         current_layout,
@@ -334,7 +336,6 @@ class ForeSight(TransformationPass):
         # Copy the set of completed nodes
         # as the set will be used across multiple
         # computation kernels.
-        original_completed = completed_nodes 
         completed_nodes = copy(completed_nodes)
 
         # Only execute operations in current layer.
@@ -358,13 +359,20 @@ class ForeSight(TransformationPass):
             # Filter out all operations that are currently adjacent.
             if self.coupling_map.graph.has_edge(current_layout[q0], current_layout[q1]):
                 output_layers[0].append(self._remap_gate_for_layout(node, current_layout, canonical_register))
+                completed_nodes.add(node)
             else:  # Otherwise, get path candidates and place it in path_collection_list.
                 path_collection_list.append(self.path_find_and_fold(q0, q1, post_primary_layer_view, current_layout))
                 post_nodes.append(node)
                 target_list.append((q0, q1))
                 target_to_node[(q0, q1)] = node
-            completed_nodes.add(node)  # preemptively add the node -- we will place it anyways.
-
+        if self.use_asap_boost:
+            output_layers.extend(self.complete_nodes_asap(
+                dag,
+                front_layer,
+                current_layout,
+                completed_nodes,
+                canonical_register
+            ))
         # Build PPC and get candidate list.
         if len(path_collection_list) == 0:
             return [ShallowSolveSolution(output_layers, current_layout, 0, completed_nodes)]
@@ -372,7 +380,6 @@ class ForeSight(TransformationPass):
         candidate_list, suggestions = path_selector.find_and_join(self, target_list, current_layout, post_primary_layer_view)
         if candidate_list is None:  # We failed, take the suggestions.
             self.suggestions += 1
-
             tmp_pl_view = deepcopy(primary_layer_view)
             tmp_sl_view = deepcopy(secondary_layer_view)
             # Remove top layer from both views.
@@ -387,17 +394,18 @@ class ForeSight(TransformationPass):
                 target_lists.append(target_sub_list)
                 tmp_pl_view.appendleft([target_to_node[target] for target in target_sub_list])
                 tmp_sl_view.appendleft([])
-            solutions = [ShallowSolveSolution(output_layers, current_layout, 0, set())]
+            solutions = [ShallowSolveSolution(output_layers, current_layout, 0, completed_nodes)]
             while target_lists:
                 target_sub_list = target_lists.pop()
                 next_solutions = []
                 for prev_soln in solutions:
                     solution_list = self.shallow_solve(
+                        dag,
                         tmp_pl_view,
                         tmp_sl_view,
                         prev_soln.layout,
                         canonical_register,
-                        original_completed
+                        prev_soln.completed_nodes
                     )
                     for new_soln in solution_list:
                         prev_layers_cpy = copy(prev_soln.output_layers)
@@ -406,7 +414,7 @@ class ForeSight(TransformationPass):
                             prev_layers_cpy,
                             new_soln.layout,
                             prev_soln.num_swaps+new_soln.num_swaps,
-                            completed_nodes
+                            new_soln.completed_nodes
                         ))
                 tmp_pl_view.popleft()
                 tmp_sl_view.popleft()
@@ -431,8 +439,7 @@ class ForeSight(TransformationPass):
                     if p0 == p1:
                         continue
                     v0, v1 = new_layout[p0], new_layout[p1]
-                    swp_gate = DAGNode(
-                        type='op',
+                    swp_gate = DAGOpNode(
                         op=SwapGate(),
                         qargs=[v0, v1]  
                     )
@@ -460,7 +467,40 @@ class ForeSight(TransformationPass):
                 num_swaps,
                 completed_nodes
             ))
+        for node in front_layer:
+            completed_nodes.add(node)
         return solutions
+
+    def complete_nodes_asap(self, dag, front_layer, current_layout, completed_nodes, canonical_register):
+        pred = defaultdict(int)
+        # set up predecessor dictionary
+        exec_list = []
+        for node in completed_nodes:
+            for succ in self._successors(node, dag):
+                pred[succ] += 1
+                if pred[succ] == len(succ.qargs):
+                    exec_list.append(succ)
+        output_layers = []
+        while exec_list:
+            next_exec_list = []
+            output_layers.append([])
+            for node in exec_list:
+                if node in completed_nodes:
+                    continue
+                if len(node.qargs) == 2:
+                    v0,v1 = node.qargs
+                    if not self.coupling_map.graph.has_edge(current_layout[v0],current_layout[v1]):
+                        continue
+                output_layers[-1].append(
+                    self._remap_gate_for_layout(node, current_layout, canonical_register)
+                )
+                completed_nodes.add(node)
+                for succ in self._successors(node, dag):
+                    pred[succ] += 1
+                    if pred[succ] == len(succ.qargs):
+                        next_exec_list.append(succ)
+            exec_list = next_exec_list
+        return output_layers
 
     def compute_post_primary(self, primary_layer_view, completed_nodes):
         """
@@ -577,6 +617,13 @@ class ForeSight(TransformationPass):
         new_op = copy(op)
         new_op.qargs = [canonical_register[layout[x]] for x in op.qargs]
         return new_op
+
+    def _successors(self, node, dag):
+        for (_, successor, edge_data) in dag.edges(node):
+            if not isinstance(successor, DAGOpNode):
+                continue
+            if isinstance(edge_data, Qubit):
+                yield successor
 
     def _verify_and_measure(
         self, 
