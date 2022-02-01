@@ -60,6 +60,10 @@ class ForeSight(TransformationPass):
         self.mean_degree = len(self.coupling_map.get_edges()) / self.coupling_map.size()
         self.use_asap_boost = asap_boost
 
+        # For ASAP boost
+        self.base_pred = {}
+
+        # Other
         self.fake_run = False
         self.debug = debug
 
@@ -100,6 +104,12 @@ class ForeSight(TransformationPass):
         primary_layer_view = deque(primary_layer_view)
         secondary_layer_view = deque(secondary_layer_view)
 
+        # initialize base pred
+        self.base_pred = defaultdict(int)
+        for (_,input_node) in dag.input_map.items():
+            for succ in self._successors(input_node, dag):
+                self.base_pred[succ] += 1
+        # Run deep solve
         solutions = self.deep_solve(
             dag,
             primary_layer_view, 
@@ -204,8 +214,16 @@ class ForeSight(TransformationPass):
             solver_queue.append(ComputationKernel(
                 deep_solve_soln.layout,
                 i,
-                deep_solve_soln.completed_nodes
+                deep_solve_soln.completed_nodes,
+                kernel_type='alap'
             ))
+            if self.use_asap_boost:
+                solver_queue.append(ComputationKernel(
+                    deep_solve_soln.layout,
+                    i,
+                    deep_solve_soln.completed_nodes,
+                    kernel_type='asap'
+                ))
         while len(solver_queue) <= 2*self.solution_cap:
             if len(primary_layer_view) == 0:
                 break
@@ -213,14 +231,24 @@ class ForeSight(TransformationPass):
             next_leaves = []
             for compkern in solver_queue:  # Empty out queue into next_solver_queue.
                 parent = leaves[compkern.parent_id]
-                solutions = self.shallow_solve(
-                    dag,
-                    primary_layer_view,
-                    secondary_layer_view,
-                    compkern.layout,
-                    canonical_register,
-                    compkern.completed_nodes
-                )
+                if compkern.type == 'asap':
+                    solutions = self.asap_burst_solve(
+                        dag,
+                        primary_layer_view,
+                        secondary_layer_view,
+                        compkern.layout,
+                        canonical_register,
+                        compkern.completed_nodes
+                    )
+                else:
+                    solutions = self.shallow_solve(
+                        dag,
+                        primary_layer_view,
+                        secondary_layer_view,
+                        compkern.layout,
+                        canonical_register,
+                        compkern.completed_nodes
+                    )
                 # Apply solutions non-deterministically to current_dag.
                 for (i, shallow_solve_soln) in enumerate(solutions):
                     # Create node for each candidate solution.
@@ -233,13 +261,24 @@ class ForeSight(TransformationPass):
                     parent.children.append(node)
                     next_leaves.append(node)
                     # Create a child kernel
-                    next_solver_queue.append(ComputationKernel(
-                        shallow_solve_soln.layout,
-                        len(next_leaves) - 1,
-                        shallow_solve_soln.completed_nodes
-                    ))
+                    for kernel_type in ['asap','alap']:
+                        if kernel_type == 'asap' and not self.use_asap_boost:
+                            continue
+                        next_solver_queue.append(ComputationKernel(
+                            shallow_solve_soln.layout,
+                            len(next_leaves) - 1,
+                            shallow_solve_soln.completed_nodes
+                        ))
             solver_queue = next_solver_queue
             leaves = next_leaves
+            # Update base pred before popping top layer
+            for node in primary_layer_view[0]:
+                for succ in self._successors(node,dag):
+                    self.base_pred[succ] += 1
+            for node in secondary_layer_view[0]:
+                for succ in self._successors(node,dag):
+                    self.base_pred[succ] += 1
+            # Remove top layer
             primary_layer_view.popleft()
             secondary_layer_view.popleft()
         # The critical point has been reached -- we contract the computation tree.
@@ -326,7 +365,6 @@ class ForeSight(TransformationPass):
         """
         # Initialize all structures
         output_layers = [[]]
-        starting_output_layer = 1
         
         target_list = []
         path_collection_list = []
@@ -365,14 +403,14 @@ class ForeSight(TransformationPass):
                 post_nodes.append(node)
                 target_list.append((q0, q1))
                 target_to_node[(q0, q1)] = node
-        if self.use_asap_boost:
-            output_layers.extend(self.complete_nodes_asap(
-                dag,
-                front_layer,
-                current_layout,
-                completed_nodes,
-                canonical_register
-            ))
+#        if self.use_asap_boost:
+#            output_layers.extend(self.complete_nodes_asap(
+#                dag,
+#                front_layer,
+#                current_layout,
+#                completed_nodes,
+#                canonical_register
+#            ))
         # Build PPC and get candidate list.
         if len(path_collection_list) == 0:
             return [ShallowSolveSolution(output_layers, current_layout, 0, completed_nodes)]
@@ -473,14 +511,12 @@ class ForeSight(TransformationPass):
 
     def complete_nodes_asap(self, dag, front_layer, current_layout, completed_nodes, canonical_register):
         pred = defaultdict(int)
-        # set up predecessor dictionary
-        exec_list = []
-        for node in completed_nodes:
-            for succ in self._successors(node, dag):
-                pred[succ] += 1
-                if pred[succ] == len(succ.qargs):
-                    exec_list.append(succ)
+        # Copy base pred
+        for x in self.base_pred:
+            pred[x] = self.base_pred[x]
+        # Complete satisfied nodes
         output_layers = []
+        exec_list = front_layer
         while exec_list:
             next_exec_list = []
             output_layers.append([])
@@ -502,7 +538,108 @@ class ForeSight(TransformationPass):
             exec_list = next_exec_list
         return output_layers
 
-    def compute_post_primary(self, primary_layer_view, completed_nodes):
+    def asap_burst_solve(
+        self, 
+        dag,
+        primary_layer_view,
+        secondary_layer_view,
+        current_layout,
+        canonical_register,
+        completed_nodes,
+        burst_size=300
+    ):
+        output_layers = [] 
+        completed_nodes = copy(completed_nodes)
+
+        # setup front layer
+        front_layer = []
+        front_layer.extend(primary_layer_view[0])
+        front_layer.extend(secondary_layer_view[0])
+        # setup predecessor table
+        pred = defaultdict(int)
+        for (_,input_node) in dag.input_map.items():
+            for s in self._successors(input_node,dag):
+                pred[s] += 1
+        for node in completed_nodes:
+            for s in self._successors(node,dag):
+                pred[s] += 1
+        # copy layout
+        new_layout = current_layout.copy()
+        completion_count = 0
+        num_swaps = 0
+        while front_layer:
+            output_layers.append([])
+            exec_list = []
+            next_front_layer = []
+            for node in front_layer:
+                if len(node.qargs) != 2 or node in completed_nodes: 
+                    exec_list.append(node)
+                else:
+                    q0,q1 = node.qargs
+                    if self.coupling_map.graph.has_edge(new_layout[q0],new_layout[q1]):
+                        exec_list.append(node)
+                    else:
+                        next_front_layer.append(node)
+            if exec_list:
+                for node in exec_list:
+                    if node not in completed_nodes:
+                        output_layers[-1].append(
+                            self._remap_gate_for_layout(node, new_layout, canonical_register)
+                        )
+                        if len(node.qargs) == 2:
+                            completion_count += 1
+                        completed_nodes.add(node)
+                    for s in self._successors(node,dag):
+                        if node not in completed_nodes:
+                            pred[s] += 1
+                        if pred[s] == len(s.qargs):
+                            next_front_layer.append(s)
+                front_layer = next_front_layer
+                continue
+            if completion_count > burst_size:
+                break
+            # Nothing is executable, try to swap som qubits.
+            # Setup root set
+            root_set = set()
+            for node in next_front_layer:   
+                q0,q1 = node.qargs
+                root_set.add(new_layout[q0])
+                root_set.add(new_layout[q1])
+            # Create post primary layer view
+            min_swaps = []
+            min_score = -1
+            for s1 in root_set:
+                for s2 in self.coupling_map.neighbors(s1):
+                    test_layout = new_layout.copy() 
+                    test_layout.swap(s1,s2)
+                    score = self._asap_distf(dag, next_front_layer, pred, test_layout,\
+                                completed_nodes)
+                    if score < min_score or min_score == -1:
+                        min_swaps = [(s1,s2)]
+                        min_score = score
+                    elif score == min_score:
+                        min_swaps.append((s1,s2))
+                        min_score = score
+            # Randomly choose one swap.
+            (s1,s2) = min_swaps[np.random.randint(0,high=len(min_swaps))]
+            swp_gate = DAGOpNode(
+                op=SwapGate(),
+                qargs=[new_layout[s1],new_layout[s2]]
+            ) 
+            num_swaps += 1
+            output_layers[-1].append(
+                self._remap_gate_for_layout(swp_gate, new_layout, canonical_register)
+            )
+            new_layout.swap(s1,s2)
+            front_layer = next_front_layer
+        return [ShallowSolveSolution(
+            output_layers,
+            new_layout,
+            num_swaps,
+            completed_nodes
+        )]
+
+    def compute_post_primary(self, primary_layer_view, completed_nodes, depth_unaware=False):
         """
             Computes the post primary layer view. A post primary layer
             view (PPLV) is a subset of the primary layer view that contains
@@ -536,7 +673,8 @@ class ForeSight(TransformationPass):
                     visited.add(q1)
                     curr_layer.append(node)
                 if primary_layer_view[i]:
-                    post_primary_layer_view.append(curr_layer)
+                    if (depth_unaware and curr_layer) or not depth_unaware:
+                        post_primary_layer_view.append(curr_layer)
         return post_primary_layer_view
 
     def path_find_and_fold(self, v0, v1, post_primary_layer_view, current_layout):
@@ -599,7 +737,7 @@ class ForeSight(TransformationPass):
             latest_layout = test_layout
             latest_fold = fold
             # Compute distance to post primary layer.
-            dist = self._distf(fold, len(path)-1, post_primary_layer_view, test_layout)
+            dist = self._alap_distf(len(path)-1, post_primary_layer_view, test_layout)
             if dist < min_dist or min_dist == -1:
                 min_dist = dist
                 min_folds = [(
@@ -664,15 +802,14 @@ class ForeSight(TransformationPass):
         if verify_only:
             dist = 0
         else:
-            dist = self._distf(flattened_soln, size, post_primary_layer_view, test_layout)
+            dist = self._alap_distf(size, post_primary_layer_view, test_layout)
         return True, dist
 
-    def _distf(self, soln, soln_size, post_primary_layer_view, test_layout):
+    def _alap_distf(self, soln_size, post_primary_layer_view, test_layout):
         """
             The distance heuristic function to determine the goodness of a
             solution.
 
-            soln: the solution to evaluate
             soln_size: total number of operations in the solution
             post_primary_layer_view: a BFS-list of future operations.
             test_layout: a trial layout used during routing that corresponds
@@ -695,4 +832,39 @@ class ForeSight(TransformationPass):
         else:
             dist = dist/num_ops
             return dist+soln_size*np.exp(-(num_ops/(self.mean_degree**1.5))) 
-
+    
+    def _asap_distf(self, dag, front_layer, pred, test_layout, completed_nodes, explore_size=20): 
+        inc = []
+        tmp_front = front_layer
+        
+        dist1,dist2 = 0,0
+        explored = 0
+        done = False
+        for node in front_layer:
+            v0,v1 = node.qargs
+            p0,p1 = test_layout[v0],test_layout[v1]
+            dist1 += self.distance_matrix[p0][p1]
+        dist1 /= len(front_layer)
+        while tmp_front and not done:
+            next_front = []
+            for node in tmp_front:
+                for s in self._successors(node,dag):
+                    inc.append(s)
+                    pred[s] += 1
+                    if pred[s] == len(s.qargs):
+                        next_front.append(s)
+                        if len(s.qargs) == 2 and s not in completed_nodes:
+                            v0,v1 = s.qargs
+                            p0,p1 = test_layout[v0],test_layout[v1]
+                            dist2 += 0.5*self.distance_matrix[p0][p1]
+                            explored += 1 
+                if explored >= explore_size:
+                    done = True
+                    break
+            tmp_front = next_front
+        for node in inc:
+            pred[node] -= 1
+        if explored > 0:
+            dist2 /= explored
+        return dist1+dist2
+    

@@ -47,7 +47,7 @@ G_QISKIT_GATE_SET = ['u1', 'u2', 'u3', 'cx']
 # BENCHMARK SUITES
 G_QASMBENCH_MEDIUM = [
     'adder_n10',        # single adder
-    'qft_n15',
+#    'qft_n15',
     'dnn_n8',           # quantum deep neural net
 #    'cc_n12',           # counterfeit coin
 #    'multiply_n13',

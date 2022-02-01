@@ -4,10 +4,11 @@
 """
 
 class ComputationKernel:
-    def __init__(self, layout, parent_id, completed_nodes):
+    def __init__(self, layout, parent_id, completed_nodes, kernel_type='alap'):
         self.layout = layout
         self.parent_id = parent_id
         self.completed_nodes = completed_nodes
+        self.type = kernel_type
 
 class DeepSolveSolution:
     def __init__(self, output_layers, layout, layer_sum, completed_nodes):

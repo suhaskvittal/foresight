@@ -89,6 +89,13 @@ class BenchmarkPass(AnalysisPass):
                 debug=kwargs['debug'],
                 edge_weights=edge_weights
         )
+        self.foresight_h_router = ForeSight(
+                coupling_map,
+                slack=slack,
+                solution_cap=solution_cap,
+                asap_boost=True,
+                debug=kwargs['debug']
+        )
         self.qiskit_benchmark_passes = {
             'sabre': ('SABRE', PassManager([
                         self.sabre_router,
@@ -106,6 +113,10 @@ class BenchmarkPass(AnalysisPass):
                         self.noisy_foresight_router,
                         Unroller(self.basis_gates)
                     ])),
+            'foresight_hybrid': ('Foresight-H',PassManager([
+                        self.foresight_h_router,
+                        Unroller(self.basis_gates)
+                    ]))
         }
 
         # Layout pass
