@@ -6,6 +6,7 @@
 from qiskit.circuit import Qubit
 
 from qiskit.transpiler.basepasses import TransformationPass
+from qiskit.transpiler.passes import *
 from qiskit.transpiler.layout import Layout
 from qiskit.dagcircuit import DAGOpNode
 from qiskit.circuit.library import CXGate, SwapGate, Measure
@@ -27,6 +28,7 @@ class ForeSight(TransformationPass):
         slack=2,
         solution_cap=32,
         asap_boost=False,
+        approx_asap=False,
         edge_weights=None,
         vertex_weights=None,
         readout_weights=None,
@@ -59,9 +61,7 @@ class ForeSight(TransformationPass):
         ) 
         self.mean_degree = len(self.coupling_map.get_edges()) / self.coupling_map.size()
         self.use_asap_boost = asap_boost
-
-        # For ASAP boost
-        self.base_pred = {}
+        self.approx_asap = approx_asap
 
         # Other
         self.fake_run = False
@@ -104,11 +104,6 @@ class ForeSight(TransformationPass):
         primary_layer_view = deque(primary_layer_view)
         secondary_layer_view = deque(secondary_layer_view)
 
-        # initialize base pred
-        self.base_pred = defaultdict(int)
-        for (_,input_node) in dag.input_map.items():
-            for succ in self._successors(input_node, dag):
-                self.base_pred[succ] += 1
         # Run deep solve
         solutions = self.deep_solve(
             dag,
@@ -149,9 +144,18 @@ class ForeSight(TransformationPass):
                 print('Error! Unequal non-SWAP gates after routing.')
                 print('Original circuit: ', orig_ops)
                 print('Mapped circuit: ', mapped_ops)
+                break
         if self.debug:
             print('Statistics')
             print('\tSuggestion usage:', self.suggestions)
+        if self.use_asap_boost:  # ASAP boosted routing is hard to verify, so do so here.
+            # If SABRE adds swaps to our output dag, then we know we have mis-routed.
+            remapped_dag = SabreSwap(self.coupling_map).run(mapped_dag)
+            remapped_ops = remapped_dag.count_ops()
+            if remapped_ops['swap'] != mapped_ops['swap']:
+                print('Error! Remapped dag contains extra SWAPs.')
+                print('Mapped circuit: ', mapped_dag['swap'])
+                print('Remapped circuit: ', remapped_dag['swap'])
         return mapped_dag
     
     def deep_solve(
@@ -264,6 +268,8 @@ class ForeSight(TransformationPass):
                     for kernel_type in ['asap','alap']:
                         if kernel_type == 'asap' and not self.use_asap_boost:
                             continue
+                        if self.approx_asap and compkern.type != kernel_type and np.random.random() < 0.25:
+                            continue
                         next_solver_queue.append(ComputationKernel(
                             shallow_solve_soln.layout,
                             len(next_leaves) - 1,
@@ -271,13 +277,6 @@ class ForeSight(TransformationPass):
                         ))
             solver_queue = next_solver_queue
             leaves = next_leaves
-            # Update base pred before popping top layer
-            for node in primary_layer_view[0]:
-                for succ in self._successors(node,dag):
-                    self.base_pred[succ] += 1
-            for node in secondary_layer_view[0]:
-                for succ in self._successors(node,dag):
-                    self.base_pred[succ] += 1
             # Remove top layer
             primary_layer_view.popleft()
             secondary_layer_view.popleft()
@@ -403,14 +402,6 @@ class ForeSight(TransformationPass):
                 post_nodes.append(node)
                 target_list.append((q0, q1))
                 target_to_node[(q0, q1)] = node
-#        if self.use_asap_boost:
-#            output_layers.extend(self.complete_nodes_asap(
-#                dag,
-#                front_layer,
-#                current_layout,
-#                completed_nodes,
-#                canonical_register
-#            ))
         # Build PPC and get candidate list.
         if len(path_collection_list) == 0:
             return [ShallowSolveSolution(output_layers, current_layout, 0, completed_nodes)]
@@ -508,35 +499,6 @@ class ForeSight(TransformationPass):
         for node in front_layer:
             completed_nodes.add(node)
         return solutions
-
-    def complete_nodes_asap(self, dag, front_layer, current_layout, completed_nodes, canonical_register):
-        pred = defaultdict(int)
-        # Copy base pred
-        for x in self.base_pred:
-            pred[x] = self.base_pred[x]
-        # Complete satisfied nodes
-        output_layers = []
-        exec_list = front_layer
-        while exec_list:
-            next_exec_list = []
-            output_layers.append([])
-            for node in exec_list:
-                if node in completed_nodes:
-                    continue
-                if len(node.qargs) == 2:
-                    v0,v1 = node.qargs
-                    if not self.coupling_map.graph.has_edge(current_layout[v0],current_layout[v1]):
-                        continue
-                output_layers[-1].append(
-                    self._remap_gate_for_layout(node, current_layout, canonical_register)
-                )
-                completed_nodes.add(node)
-                for succ in self._successors(node, dag):
-                    pred[succ] += 1
-                    if pred[succ] == len(succ.qargs):
-                        next_exec_list.append(succ)
-            exec_list = next_exec_list
-        return output_layers
 
     def asap_burst_solve(
         self, 

@@ -38,10 +38,10 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
     data = defaultdict(list)
     if kwargs['noisy']:
         compare = ['sabre', 'foresight']
-    elif dataset == 'zulehner':
+    elif dataset == 'zulehner' or dataset == 'zulehner_partial':
         compare = ['sabre', 'foresight','foresight_hybrid', 'a*']
     else:
-        compare = ['sabre', 'foresight','foresight_hybrid', 'a*']
+        compare = ['sabre', 'foresight','foresight_ssonly','a*']
     benchmark_pass = BenchmarkPass(coupling_map, arch_file, runs=runs, compare=compare, compute_stats=False, **kwargs)
     benchmark_pm = PassManager([
         basis_pass, 
@@ -57,9 +57,9 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
         benchmark_folder, benchmark_suite = G_ZULEHNER
     elif dataset == 'zulehner_partial':
         benchmark_folder, benchmark_suite = G_ZULEHNER_PARTIAL
-    elif dataset == 'medium':
+    elif dataset == 'qasmbench_medium':
         benchmark_suite = G_QASMBENCH_MEDIUM
-    elif dataset == 'large':
+    elif dataset == 'qasmbench_large':
         benchmark_suite = G_QASMBENCH_LARGE
     elif dataset == 'qaoask':
         benchmark_folder, benchmark_suite = G_QAOA_SK
@@ -71,6 +71,8 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
         benchmark_folder, benchmark_suite = G_BV_L
     elif dataset == 'bvvl':
         benchmark_folder, benchmark_suite = G_BV_VL
+    elif dataset == 'vqebench':
+        benchmark_folder, benchmark_suite = G_VQE
 
     used_benchmarks = []
     sim_counts = {}
@@ -79,7 +81,7 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
             circ = QuantumCircuit.from_qasm_file('benchmarks/qasmbench/%s/%s/%s.qasm' % (dataset, qb_file, qb_file))    
         else:
             circ = QuantumCircuit.from_qasm_file('%s/%s' % (benchmark_folder, qb_file))
-        if circ.depth() > 2500:
+        if circ.depth() > 2500 and dataset == 'zulehner':
             continue
         used_benchmarks.append(qb_file)
         print('[%s]' % qb_file)
@@ -132,13 +134,14 @@ if __name__ == '__main__':
         print('\t--dataset <d> where d is one of')
         print('\t\tzulehner (circuits used by Zulehner et al. in the A* paper)')
         print('\t\tzulehner_partial (a small selection of Zulehner et al.\'s circuits)')
-        print('\t\tmedium (a subset of the medium circuits from the QASMBENCH suite)')
-        print('\t\tlarge (a subset of the large circuits from the QASMBENCH suite)')
+        print('\t\tqasmbench_medium (a subset of the medium circuits from the QASMBENCH suite)')
+        print('\t\tqasmbench_large (a subset of the large circuits from the QASMBENCH suite)')
         print('\t\tqaoask (Sherrington-Kirkpatrik QAOA circuits)')
         print('\t\tqaoa3rl (QAOA circuits for 3-regular graphs -- max size is 20 qubits)')
         print('\t\tqaoa3rvl (QAOA circuits for 3-regular graphs using around 100 qubits)')
         print('\t\tbvl (Bernstein-Vazirani circuits up to 50 qubits)')
         print('\t\tbvvl (Bernstein-Vazirani circuits up to 500 qubits)')
+        print('\t\tvqebench (VQE Benchmarks from 4 to 8 qubits)')
         print('\t--runs <r> where r is the number of trials for each circuit')
         print('\t--coupling <backend> where backend is one of')
         print('\t\ttoronto (IBMQ Toronto -- 27 qubits)')

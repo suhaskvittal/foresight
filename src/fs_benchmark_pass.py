@@ -94,6 +94,7 @@ class BenchmarkPass(AnalysisPass):
                 slack=slack,
                 solution_cap=solution_cap,
                 asap_boost=True,
+                approx_asap=True,
                 debug=kwargs['debug']
         )
         self.qiskit_benchmark_passes = {
