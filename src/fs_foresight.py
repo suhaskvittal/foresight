@@ -88,6 +88,23 @@ class ForeSight(TransformationPass):
                     depth.
                 (4) We then finally route based on the proposed
                     solution and return the result.
+            ForeSight also verifies the result during execution
+                (1) If this is normal ForeSight (no ASAP boost),
+                    then, we verify in two places.
+                        (a) Shallow Solve -- we verify that all
+                            2-qubit operations in the layer have
+                            adjacent operands.
+                        (b) In this method -- we verify that all
+                            operations in the original dag have
+                            been placed.
+                (2) If this is ASAP boosted ForeSight, then we
+                    verify that all operations in the original
+                    dag have been placed and verify that all
+                    2-qubit operations are valid in this method.
+                    For checking that all 2-qubit operations are
+                    valid, we run SABRE to check if any new SWAPs
+                    are added. If no such SWAPs are found, then 
+                    all operands of 2-qubit operations are adjacent.
         """
         mapped_dag = dag._copy_circuit_metadata()
         canonical_register = dag.qregs["q"]
@@ -405,6 +422,9 @@ class ForeSight(TransformationPass):
         # Build PPC and get candidate list.
         if len(path_collection_list) == 0:
             return [ShallowSolveSolution(output_layers, current_layout, 0, completed_nodes)]
+        # This part is pretty much described as "magic" in the paper.
+        # This step is heavily rooted in theory for its correctness, so we excluded the
+        # explanation.
         path_selector = ForeSightSelector(path_collection_list, len(path_collection_list))
         candidate_list, suggestions = path_selector.find_and_join(self, target_list, current_layout, post_primary_layer_view)
         if candidate_list is None:  # We failed, take the suggestions.
@@ -457,7 +477,6 @@ class ForeSight(TransformationPass):
 
         # Compute all solutions.
         solutions = []
-        
         for soln in candidate_list:
             output_layers_cpy = deepcopy(output_layers)
             new_layout = current_layout.copy()
@@ -510,6 +529,29 @@ class ForeSight(TransformationPass):
         completed_nodes,
         burst_size=300
     ):
+        """
+            Extension for ForeSight where we use ASAP routing to
+            map gates onto a hardware backend. The ASAP routing lasts
+            for up to "burst_size" 2-qubit operations and then
+            returns a list of SWAPs.
+
+            The ASAP policy here is just a modified version of SABRE
+            that works with ForeSight. Future work could on designing
+            new ASAP policies.
+
+            In theory, any policy can be integrated with ForeSight, as we
+            have done here.
+
+            dag: the input dag
+            primary_layer_view: BFS list of 2-qubit operations
+            secondary_layer_view: BFS list of 1-qubit and barrier operations
+            current_layout: running layout before calling ASAP
+            canonical_register: required for gate mapping
+            completed_nodes: a list of dag nodes that have been routed
+            burst_size: the number of 2-qubit operations to route before returning
+
+            Returns an array containing a single ShallowSolveSolution object.
+        """
         output_layers = [] 
         completed_nodes = copy(completed_nodes)
 
@@ -560,7 +602,7 @@ class ForeSight(TransformationPass):
                 continue
             if completion_count > burst_size:
                 break
-            # Nothing is executable, try to swap som qubits.
+            # Nothing is executable, try to swap some qubits.
             # Setup root set
             root_set = set()
             for node in next_front_layer:   
@@ -610,6 +652,8 @@ class ForeSight(TransformationPass):
             
             primary_layer_view: the BFS-list of 2-qubit operations in the DAG
             completed_nodes: a set of already-routed operations.
+
+            Returns a BFS-list of future operations.
         """
         if len(primary_layer_view) == 1:
             post_primary_layer_view = []
@@ -652,6 +696,10 @@ class ForeSight(TransformationPass):
             post_primary_layer_view: a BFS-list of future operations that helps
                 in deciding where to fold along a path.
             current_layout: the current running layout during routing.
+
+            Returns a list of path folds. Note that all path folds in the list are
+                not necessarily equally optimal, but they are the most optimal
+                for their respective path.
         """
         p0, p1 = current_layout[v0], current_layout[v1]
         if self.coupling_map.graph.has_edge(p0, p1):
@@ -671,6 +719,8 @@ class ForeSight(TransformationPass):
             current_layout: the current running layout during routing
             post_primary_layer_view: a BFS-list of future operations that
                 helps decide where to fold.
+
+            Returns a list of equally optimal folds.
         """
         min_dist = -1
         min_folds = []
@@ -743,6 +793,9 @@ class ForeSight(TransformationPass):
             target_list: the list of 2-qubit operations that must be satisfied
             current_layout: the current running layout during routing
             post_primary_layer_view: a BFS-list of future operations.
+
+            Returns a tuple (IS_A_SOLN, dist) where IS_A_SOLN is a boolean and
+                dist is a float.
         """
         if len(target_list) == 0:
             return True, 0
@@ -776,6 +829,8 @@ class ForeSight(TransformationPass):
             post_primary_layer_view: a BFS-list of future operations.
             test_layout: a trial layout used during routing that corresponds
                 to the given solution
+
+            Returns a float that is the distance value (lower is better)
         """
         dist = 0.0
         num_ops = 0
@@ -796,6 +851,18 @@ class ForeSight(TransformationPass):
             return dist+soln_size*np.exp(-(num_ops/(self.mean_degree**1.5))) 
     
     def _asap_distf(self, dag, front_layer, pred, test_layout, completed_nodes, explore_size=20): 
+        """
+            The lookahead distance heuristic used in SABRE.
+
+            dag: the input dag
+            front_layer: the current top layer that is being routed
+            pred: the predecessor table for each dag node
+            test_layout: layout to evaluate
+            completed_nodes: a set of dag nodes that have been routed
+            explore_size: number of dag nodes to consider for layout evaluation
+
+            Returns a float that is the distance value (lower is better).
+        """
         inc = []
         tmp_front = front_layer
         
