@@ -1,6 +1,6 @@
 """
     author: Suhas Vittal
-    date:   29 September 2021 @ 2:09 p.m. EST
+    date:   29 September 2021
 """
 
 from qiskit.circuit import Qubit
@@ -74,6 +74,7 @@ class ForeSight(TransformationPass):
 
         # usage statistics
         self.suggestions = 0
+        self.swap_segments = []
             
     def run(self, dag):
         """
@@ -135,6 +136,7 @@ class ForeSight(TransformationPass):
         min_layout = None
         min_size = -1
         min_depth = -1
+        min_segments = None
         for deep_solve_soln in solutions:
             layout, soln, size =\
                 deep_solve_soln.layout, deep_solve_soln.output_layers, deep_solve_soln.layer_sum
@@ -144,6 +146,8 @@ class ForeSight(TransformationPass):
                 min_solution = soln
                 min_size = size
                 min_depth = depth
+                min_segments = deep_solve_soln.swap_segments
+        self.swap_segments = min_segments
         self.property_set['final_layout'] = min_layout
 
         if self.fake_run:
@@ -226,7 +230,8 @@ class ForeSight(TransformationPass):
                 deep_solve_soln.output_layers,
                 deep_solve_soln.layer_sum,
                 None,
-                []
+                [],
+                swap_segments=deep_solve_soln.swap_segments
             )  
             leaves.append(root_node)
             # Each solution instance is a "computation kernel".
@@ -277,7 +282,8 @@ class ForeSight(TransformationPass):
                         shallow_solve_soln.output_layers,
                         parent.sum_data + shallow_solve_soln.num_swaps,
                         parent,
-                        []
+                        [],
+                        swap_segments=[shallow_solve_soln.num_swaps]
                     )
                     parent.children.append(node)
                     next_leaves.append(node)
@@ -285,7 +291,9 @@ class ForeSight(TransformationPass):
                     for kernel_type in ['asap','alap']:
                         if kernel_type == 'asap' and not self.use_asap_boost:
                             continue
-                        if self.approx_asap and compkern.type != kernel_type and np.random.random() < 0.25:
+                        #if self.approx_asap and compkern.type != kernel_type and np.random.random() < 0.25:
+                            continue
+                        if kernel_type != 'alap' and shallow_solve_soln.num_swaps == 0:
                             continue
                         next_solver_queue.append(ComputationKernel(
                             shallow_solve_soln.layout,
@@ -328,15 +336,19 @@ class ForeSight(TransformationPass):
         for min_leaf in min_leaves:
             output_layer_deque = deque([])
             curr = min_leaf.leaf_node
+            swap_segments = []  # build swap segments from the tree
             while curr != None:
                 output_layer_deque.extendleft(list(curr.obj_data)[::-1])
+                if len(curr.swap_segments) > 0 and curr.swap_segments[0] != 0:
+                    swap_segments.extend(curr.swap_segments)
                 curr = curr.parent
             # Package the solution as a DeepSolveSolution
             min_solutions.append(DeepSolveSolution(
                 output_layer_deque,
                 min_leaf.layout,
                 min_leaf.leaf_sum,
-                min_leaf.completed_nodes
+                min_leaf.completed_nodes,
+                swap_segments=swap_segments[::-1]  # it is backwards because we went from leaf to root
             ))
         return self.deep_solve(dag, primary_layer_view, secondary_layer_view, min_solutions, canonical_register)
                 

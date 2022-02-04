@@ -11,11 +11,12 @@ class ComputationKernel:
         self.type = kernel_type
 
 class DeepSolveSolution:
-    def __init__(self, output_layers, layout, layer_sum, completed_nodes):
+    def __init__(self, output_layers, layout, layer_sum, completed_nodes, swap_segments=None):
         self.output_layers = output_layers
         self.layout = layout
         self.layer_sum = layer_sum
         self.completed_nodes = completed_nodes
+        self.swap_segments = [] if swap_segments is None else swap_segments
 
 class ShallowSolveSolution:
     def __init__(self, output_layers, layout, num_swaps, completed_nodes):

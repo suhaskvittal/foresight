@@ -41,7 +41,7 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
     elif dataset == 'zulehner' or dataset == 'zulehner_partial':
         compare = ['sabre', 'foresight','foresight_hybrid', 'a*']
     else:
-        compare = ['sabre', 'foresight','foresight_ssonly','a*']
+        compare = ['sabre', 'foresight','foresight_hybrid','a*']
     benchmark_pass = BenchmarkPass(coupling_map, arch_file, runs=runs, compare=compare, compute_stats=False, **kwargs)
     benchmark_pm = PassManager([
         basis_pass, 
@@ -73,11 +73,17 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
         benchmark_folder, benchmark_suite = G_BV_VL
     elif dataset == 'vqebench':
         benchmark_folder, benchmark_suite = G_VQE
+    elif dataset == 'qaoareal1':
+        benchmark_folder, benchmark_suite = G_QAOA_REAL1
+    elif dataset == 'qaoareal2':
+        benchmark_folder, benchmark_suite = G_QAOA_REAL2
+    elif dataset == 'qaoareal3':
+        benchmark_folder, benchmark_suite = G_QAOA_REAL3
 
     used_benchmarks = []
     sim_counts = {}
     for qb_file in benchmark_suite:
-        if dataset == 'medium' or dataset == 'large':
+        if dataset == 'qasmbench_medium' or dataset == 'qasmbench_large':
             circ = QuantumCircuit.from_qasm_file('benchmarks/qasmbench/%s/%s/%s.qasm' % (dataset, qb_file, qb_file))    
         else:
             circ = QuantumCircuit.from_qasm_file('%s/%s' % (benchmark_folder, qb_file))

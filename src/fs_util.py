@@ -83,8 +83,11 @@ G_QAOA_3RL = _get_qasm_files('benchmarks/qaoa_3r_large')
 G_QAOA_3RVL = _get_qasm_files('benchmarks/qaoa_3r_vlarge')
 G_BV_L = _get_qasm_files('benchmarks/bv_large')
 G_BV_VL = _get_qasm_files('benchmarks/bv_vlarge')
-G_NOISY = _get_qasm_files('benchmarks/noisy')
+G_NOISY = _get_qasm_files('benchmarks/noisybench')
 G_VQE = _get_qasm_files('benchmarks/vqebench')
+G_QAOA_REAL1 = _get_qasm_files('benchmarks/qaoa_real_1L')
+G_QAOA_REAL2 = _get_qasm_files('benchmarks/qaoa_real_2L')
+G_QAOA_REAL3 = _get_qasm_files('benchmarks/qaoa_real_3L')
 
 # ALGORITHM PARAMETERS
 G_FORESIGHT_SOLN_CAP = 32

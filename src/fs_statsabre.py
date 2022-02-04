@@ -39,7 +39,7 @@ DECAY_RATE = 0.001  # Decay coefficient for penalizing serial swaps.
 DECAY_RESET_INTERVAL = 5  # How often to reset all decay rates to 1.
 
 
-[docs]class SabreSwap(TransformationPass):
+class StatSABRE(TransformationPass):
     r"""Map input circuit onto a backend topology via insertion of SWAPs.
 
     Implementation of the SWAP-based heuristic search from the SABRE qubit
@@ -143,7 +143,9 @@ DECAY_RESET_INTERVAL = 5  # How often to reset all decay rates to 1.
         self._bit_indices = None
         self.dist_matrix = None
 
-[docs]    def run(self, dag):
+        self.swap_segments = []
+
+    def run(self, dag):
         """Run the SabreSwap pass on `dag`.
 
         Args:
@@ -185,6 +187,10 @@ DECAY_RESET_INTERVAL = 5  # How often to reset all decay rates to 1.
         for _, input_node in dag.input_map.items():
             for successor in self._successors(input_node, dag):
                 self.applied_predecessors[successor] += 1
+        
+        # set up swap segments
+        self.swap_segments = []
+        current_swap_segment = 0
         while front_layer:
             execute_gate_list = []
 
@@ -225,7 +231,10 @@ DECAY_RESET_INTERVAL = 5  # How often to reset all decay rates to 1.
                     "front_layer: %s",
                     [(n.name if isinstance(n, DAGOpNode) else None, n.qargs) for n in front_layer],
                 )
-
+                # Add swap segment to list
+                if current_swap_segment > 0:
+                    self.swap_segments.append(current_swap_segment)
+                    current_swap_segment = 0
                 continue
 
             # After all free gates are exhausted, heuristically find
@@ -248,6 +257,9 @@ DECAY_RESET_INTERVAL = 5  # How often to reset all decay rates to 1.
             swap_node = DAGOpNode(op=SwapGate(), qargs=best_swap)
             self._apply_gate(mapped_dag, swap_node, current_layout, canonical_register)
             current_layout.swap(*best_swap)
+
+            # increment swap segment
+            current_swap_segment += 1
 
             num_search_steps += 1
             if num_search_steps % DECAY_RESET_INTERVAL == 0:
