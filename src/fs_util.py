@@ -30,7 +30,16 @@ def _read_arch_file(arch_file):
         edges.append([v1, v2])
         line = reader.readline()
     reader.close()
-    return CouplingMap(edges)
+    cmap = CouplingMap(edges)
+    if not cmap.is_symmetric:
+        print('ERROR')
+        # Find unsymmetric edges
+        edges = cmap.get_edges()
+        for (i,j) in edges:
+            if (j,i) not in edges:
+                print('%d,%d not in coupling map' % (j,i))
+        exit()
+    return cmap
 
 # COUPLING MAPS
 G_IBM_TORONTO = _read_arch_file('arch/ibm_toronto.arch')
@@ -46,22 +55,22 @@ G_QISKIT_GATE_SET = ['u1', 'u2', 'u3', 'cx']
 
 # BENCHMARK SUITES
 G_QASMBENCH_MEDIUM = [
-    'adder_n10',        # single adder
-#    'qft_n15',
-    'dnn_n8',           # quantum deep neural net
+#    'adder_n10',        # single adder
+    'qft_n15',
+#    'dnn_n8',           # quantum deep neural net
 #    'cc_n12',           # counterfeit coin
 #    'multiply_n13',
-    'multiplier_n15',   # binary multiplier
-    'qf21_n15',         # quantum phase estimation, factor 21           
-    'sat_n11',      
-    'seca_n11',         # shor's error correction
-    'bv_n14',           # bernstein-vazirani algorithm 
-    'ising_n10',        # ising gate sim
-    'qaoa_n6',          
-    'qpe_n9',           # quantum phase estimation
+#    'multiplier_n15',   # binary multiplier
+#    'qf21_n15',         # quantum phase estimation, factor 21           
+#    'sat_n11',      
+#    'seca_n11',         # shor's error correction
+#    'bv_n14',           # bernstein-vazirani algorithm 
+#    'ising_n10',        # ising gate sim
+#    'qaoa_n6',          
+#    'qpe_n9',           # quantum phase estimation
 #    'simon_n6',         # simon's algorithm 
-    'vqe_uccsd_n6',
-    'vqe_uccsd_n8'
+#    'vqe_uccsd_n6',
+#    'vqe_uccsd_n8'
 ]
 G_QASMBENCH_LARGE = [
     'bigadder_n18',     # ripple carry adder    

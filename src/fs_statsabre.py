@@ -29,6 +29,7 @@ from qiskit.transpiler.basepasses import TransformationPass
 from qiskit.transpiler.exceptions import TranspilerError
 from qiskit.transpiler.layout import Layout
 from qiskit.dagcircuit import DAGOpNode
+from qiskit.converters import circuit_to_dag, dag_to_circuit
 
 logger = logging.getLogger(__name__)
 

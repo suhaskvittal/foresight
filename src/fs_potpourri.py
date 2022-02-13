@@ -6,13 +6,17 @@
 from qiskit.circuit import QuantumCircuit
 from qiskit.transpiler.passes import *
 from qiskit.transpiler import CouplingMap, PassManager
+from qiskit.compiler import transpile
+from qiskit.visualization import plot_histogram as ph
 
-from fs_exec import _pad_circuit_to_fit, draw
+from fs_exec import _pad_circuit_to_fit, draw, exec_sim
+from fs_exec import total_variation_distance as TVD
 from fs_foresight import ForeSight
 from fs_util import *
 
 import pandas as pd
 import pickle as pkl
+import matplotlib.pyplot as plt
 
 import os
 from collections import defaultdict
@@ -159,6 +163,33 @@ def get_sk_model_trend():
             print('%s: %.3f' % (x, data[x][-1]))
     return data
 
+def vqe_opt3_test():    
+    benchmark_folder, benchmarks = G_QAOA_3RL
+    coupling_map = G_GOOGLE_WEBER
+
+    for qbfile in benchmarks:
+        circ = QuantumCircuit.from_qasm_file('%s/%s' % (benchmark_folder, qbfile))
+        print(qbfile)
+        opts = {0: None, 1: None, 2: None, 3: None}
+        original_counts = exec_sim(circ)
+        for opt_level in [0,1,2,3]:
+            print('opt', opt_level)
+            trans_circ = transpile(
+                circ, 
+                coupling_map=coupling_map,
+                basis_gates=G_QISKIT_GATE_SET,
+                layout_method='sabre',
+                routing_method='sabre',
+                optimization_level=opt_level
+            )
+            opts[opt_level] = trans_circ
+            trans_counts = exec_sim(trans_circ)
+            print(opt_level, TVD(original_counts, trans_counts))
+#        ph(original_counts)
+        for opt_level in [0,1,2,3]:
+            trans_circ = opts[opt_level]
+#            ph(trans_counts)
+
 def _df_to_pydict(df, perf=False, mem=False, noisy=False, ssonly=False, sim_counts=''):
     if sim_counts != '':
         with open(sim_counts, 'rb') as reader:
@@ -225,7 +256,7 @@ def _df_to_pydict(df, perf=False, mem=False, noisy=False, ssonly=False, sim_coun
         }
     return d
 
-def get_dataset1(pickle_file, excel_sub_type):
+def get_swaps_dataset(pickle_file, excel_sub_type):
     dataset = {}
 
     for coupling_map in ['toronto','aspen9', 'weber', 'tokyo']:

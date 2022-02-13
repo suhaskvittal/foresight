@@ -4,23 +4,31 @@
 """
 
 class ComputationKernel:
-    def __init__(self, layout, parent_id, completed_nodes, kernel_type='alap'):
+    def __init__(self, layout, parent_id, completed_nodes, front_layer, is_dirty, kernel_type='alap'):
         self.layout = layout
         self.parent_id = parent_id
         self.completed_nodes = completed_nodes
         self.type = kernel_type
+        self.last_front_layer = front_layer
+        self.is_dirty = is_dirty
 
 class DeepSolveSolution:
-    def __init__(self, output_layers, layout, layer_sum, completed_nodes, swap_segments=None):
+    def __init__(self, output_layers, layout, layer_sum, completed_nodes, front_layer, is_dirty, swap_segments=None, alap_used=0, asap_used=0, kernel_type='alap'):
         self.output_layers = output_layers
         self.layout = layout
         self.layer_sum = layer_sum
         self.completed_nodes = completed_nodes
         self.swap_segments = [] if swap_segments is None else swap_segments
+        self.alap_used = alap_used
+        self.asap_used = asap_used
+        self.last_front_layer = front_layer
+        self.is_dirty = is_dirty
+        self.type = kernel_type
 
 class ShallowSolveSolution:
-    def __init__(self, output_layers, layout, num_swaps, completed_nodes):
+    def __init__(self, output_layers, layout, num_swaps, completed_nodes, front_layer):
         self.output_layers = output_layers
         self.layout = layout
         self.num_swaps = num_swaps
         self.completed_nodes = completed_nodes
+        self.last_front_layer = front_layer

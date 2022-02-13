@@ -33,25 +33,22 @@ import traceback
 import pickle as pkl
     
 def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv', runs=5, **kwargs):
-    basis_pass = Unroller(G_QISKIT_GATE_SET)
 
     data = defaultdict(list)
     if kwargs['noisy']:
         compare = ['sabre', 'foresight']
-    elif dataset == 'zulehner' or dataset == 'zulehner_partial':
-        compare = ['sabre', 'foresight','foresight_hybrid', 'a*']
+    elif dataset == 'vqebench':
+        compare = ['sabre', 'foresight', 'a*', 'foresight_dynamic']
+    elif dataset == 'zulehner':
+        compare = ['sabre', 'foresight','a*','foresight_dynamic','tket']
+    elif dataset == 'qasmbench_medium' or dataset == 'qasmbench_large': 
+        compare = ['sabre','foresight_asap', 'foresight_dynamic']
     else:
-        compare = ['sabre', 'foresight','foresight_hybrid','a*']
+        compare = ['sabre', 'foresight', 'foresight_dynamic']
     benchmark_pass = BenchmarkPass(coupling_map, arch_file, runs=runs, compare=compare, compute_stats=False, **kwargs)
     benchmark_pm = PassManager([
-        basis_pass, 
         benchmark_pass
     ]) 
-    filter_pass = PassManager([
-        basis_pass,
-        TrivialLayout(coupling_map),
-        ApplyLayout()
-    ])
 
     if dataset == 'zulehner':
         benchmark_folder, benchmark_suite = G_ZULEHNER
@@ -83,22 +80,23 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
     used_benchmarks = []
     sim_counts = {}
     for qb_file in benchmark_suite:
-        if dataset == 'qasmbench_medium' or dataset == 'qasmbench_large':
-            circ = QuantumCircuit.from_qasm_file('benchmarks/qasmbench/%s/%s/%s.qasm' % (dataset, qb_file, qb_file))    
+        if dataset == 'qasmbench_medium':
+            circ = QuantumCircuit.from_qasm_file('benchmarks/qasmbench/medium/%s/%s.qasm' % (qb_file, qb_file))    
+        elif dataset == 'qasmbench_large':
+            circ = QuantumCircuit.from_qasm_file('benchmarks/qasmbench/large/%s/%s.qasm' % (qb_file, qb_file))    
         else:
             circ = QuantumCircuit.from_qasm_file('%s/%s' % (benchmark_folder, qb_file))
         if circ.depth() > 2500 and dataset == 'zulehner':
             continue
+        n_qubits = circ.num_qubits
         used_benchmarks.append(qb_file)
         print('[%s]' % qb_file)
         _pad_circuit_to_fit(circ, coupling_map)
         if not kwargs['sim']:
             circ.remove_final_measurements()
-        circ = filter_pass.run(circ)
-
-        benchmark_results = defaultdict(int)
         benchmark_pm.run(circ)
         benchmark_results = benchmark_pass.benchmark_results    
+        benchmark_results['qubits'] = n_qubits
         if benchmark_results['SABRE CNOTs'] == -1:
             print('\tN/A')
         else:
