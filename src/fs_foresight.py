@@ -5,7 +5,6 @@
 
 from qiskit.circuit import Qubit
 
-from qiskit.converters import circuit_to_dag, dag_to_circuit
 from qiskit.transpiler.basepasses import TransformationPass
 from qiskit.transpiler.passes import *
 from qiskit.transpiler.layout import Layout
@@ -29,7 +28,6 @@ class ForeSight(TransformationPass):
         slack=2,
         solution_cap=32,
         asap_boost=False,
-        asap_only=False,
         approx_asap=False,
         edge_weights=None,
         vertex_weights=None,
@@ -64,7 +62,6 @@ class ForeSight(TransformationPass):
         self.mean_degree = len(self.coupling_map.get_edges()) / self.coupling_map.size()
         self.use_asap_boost = asap_boost
         self.approx_asap = approx_asap
-        self.use_asap_only = asap_only
 
         # Other
         self.fake_run = False
@@ -78,8 +75,6 @@ class ForeSight(TransformationPass):
         # usage statistics
         self.suggestions = 0
         self.swap_segments = []
-        self.alap_used = 0
-        self.asap_used = 0
             
     def run(self, dag):
         """
@@ -128,22 +123,13 @@ class ForeSight(TransformationPass):
         secondary_layer_view = deque(secondary_layer_view)
 
         # Run deep solve
-        front_layer = []
-        front_layer.extend(primary_layer_view[0])
-        front_layer.extend(secondary_layer_view[0])
-        solutions = []
-        if not self.use_asap_only:
-            solutions.append(DeepSolveSolution([], current_layout, 0, set(), front_layer, False, kernel_type='alap')) 
-        if self.use_asap_boost:
-            solutions.append(DeepSolveSolution([],current_layout,0,set(),front_layer,False,kernel_type='asap'))
-        while primary_layer_view:
-            solutions = self.deep_solve(
-                dag,
-                primary_layer_view, 
-                secondary_layer_view, 
-                solutions,
-                canonical_register 
-            )
+        solutions = self.deep_solve(
+            dag,
+            primary_layer_view, 
+            secondary_layer_view, 
+            [DeepSolveSolution([], current_layout, 0, set())],
+            canonical_register 
+        )
 
         # Choose solution with minimum depth.
         min_solution = None
@@ -151,8 +137,6 @@ class ForeSight(TransformationPass):
         min_size = -1
         min_depth = -1
         min_segments = None
-        min_alap_used = 0
-        min_asap_used = 0
         for deep_solve_soln in solutions:
             layout, soln, size =\
                 deep_solve_soln.layout, deep_solve_soln.output_layers, deep_solve_soln.layer_sum
@@ -163,11 +147,7 @@ class ForeSight(TransformationPass):
                 min_size = size
                 min_depth = depth
                 min_segments = deep_solve_soln.swap_segments
-                min_alap_used = deep_solve_soln.alap_used
-                min_asap_used = deep_solve_soln.asap_used
         self.swap_segments = min_segments
-        self.alap_used = min_alap_used
-        self.asap_used = min_asap_used
         self.property_set['final_layout'] = min_layout
 
         if self.fake_run:
@@ -181,7 +161,7 @@ class ForeSight(TransformationPass):
         mapped_ops = mapped_dag.count_ops()
         # Self-verify that no operations have been skipped.
         for g in orig_ops:
-            if g not in mapped_ops or orig_ops[g] != mapped_ops[g]:
+            if orig_ops[g] != mapped_ops[g]:
                 print('Error! Unequal non-SWAP gates after routing.')
                 print('Original circuit: ', orig_ops)
                 print('Mapped circuit: ', mapped_ops)
@@ -193,11 +173,7 @@ class ForeSight(TransformationPass):
             # If SABRE adds swaps to our output dag, then we know we have mis-routed.
             remapped_dag = SabreSwap(self.coupling_map).run(mapped_dag)
             remapped_ops = remapped_dag.count_ops()
-            if 'swap' in remapped_ops and 'swap' not in mapped_ops:
-                print('Error! Remapped dag contains extra SWAPs.')
-                print('Mapped circuit: ', mapped_dag['swap'])
-                print('Remapped circuit: ', remapped_dag['swap'])
-            if 'swap' in remapped_ops and 'swap' in mapped_ops and remapped_ops['swap'] != mapped_ops['swap']:
+            if remapped_ops['swap'] != mapped_ops['swap']:
                 print('Error! Remapped dag contains extra SWAPs.')
                 print('Mapped circuit: ', mapped_dag['swap'])
                 print('Remapped circuit: ', remapped_dag['swap'])
@@ -255,9 +231,7 @@ class ForeSight(TransformationPass):
                 deep_solve_soln.layer_sum,
                 None,
                 [],
-                swap_segments=deep_solve_soln.swap_segments,
-                alap_used=deep_solve_soln.alap_used,
-                asap_used=deep_solve_soln.asap_used
+                swap_segments=deep_solve_soln.swap_segments
             )  
             leaves.append(root_node)
             # Each solution instance is a "computation kernel".
@@ -267,10 +241,15 @@ class ForeSight(TransformationPass):
                 deep_solve_soln.layout,
                 i,
                 deep_solve_soln.completed_nodes,
-                deep_solve_soln.last_front_layer,
-                deep_solve_soln.is_dirty,
-                kernel_type=deep_solve_soln.type,
+                kernel_type='alap'
             ))
+            if self.use_asap_boost:
+                solver_queue.append(ComputationKernel(
+                    deep_solve_soln.layout,
+                    i,
+                    deep_solve_soln.completed_nodes,
+                    kernel_type='asap'
+                ))
         while len(solver_queue) <= 2*self.solution_cap:
             if len(primary_layer_view) == 0:
                 break
@@ -283,7 +262,6 @@ class ForeSight(TransformationPass):
                         dag,
                         primary_layer_view,
                         secondary_layer_view,
-                        compkern.last_front_layer,
                         compkern.layout,
                         canonical_register,
                         compkern.completed_nodes
@@ -293,7 +271,6 @@ class ForeSight(TransformationPass):
                         dag,
                         primary_layer_view,
                         secondary_layer_view,
-                        compkern.last_front_layer,
                         compkern.layout,
                         canonical_register,
                         compkern.completed_nodes
@@ -306,38 +283,23 @@ class ForeSight(TransformationPass):
                         parent.sum_data + shallow_solve_soln.num_swaps,
                         parent,
                         [],
-                        swap_segments=[shallow_solve_soln.num_swaps],
-                        alap_used=(1 if compkern.type == 'alap' else 0)+parent.alap_used,
-                        asap_used=(1 if compkern.type == 'asap' else 0)+parent.asap_used,
+                        swap_segments=[shallow_solve_soln.num_swaps]
                     )
                     parent.children.append(node)
                     next_leaves.append(node)
                     # Create a child kernel
-                    num_children = 0
                     for kernel_type in ['asap','alap']:
                         if kernel_type == 'asap' and not self.use_asap_boost:
                             continue
-                        if kernel_type == 'alap' and self.use_asap_only:
+                        #if self.approx_asap and compkern.type != kernel_type and np.random.random() < 0.25:
                             continue
-#                        if kernel_type == 'asap' and compkern.type == 'alap' and compkern.is_dirty:
-#                        if kernel_type != compkern.type:
-                        if kernel_type == 'alap' and compkern.type == 'asap':
+                        if kernel_type != 'alap' and shallow_solve_soln.num_swaps == 0:
                             continue
-#                        if self.approx_asap and compkern.type != kernel_type and np.random.random() >= 0.25:
-#                            continue
-                        is_dirty = (kernel_type == 'asap' and compkern.type == 'alap') or compkern.is_dirty
                         next_solver_queue.append(ComputationKernel(
                             shallow_solve_soln.layout,
                             len(next_leaves) - 1,
-                            shallow_solve_soln.completed_nodes,
-                            shallow_solve_soln.last_front_layer,
-                            is_dirty,
-                            kernel_type=kernel_type,
+                            shallow_solve_soln.completed_nodes
                         ))
-                        num_children += 1
-                    if num_children == 0:
-                        print('ERROR: ZERO CHILDREN')
-                        exit()
             solver_queue = next_solver_queue
             leaves = next_leaves
             # Remove top layer
@@ -346,34 +308,23 @@ class ForeSight(TransformationPass):
         # The critical point has been reached -- we contract the computation tree.
         # Now, we simply check the leaves of the output layer tree. We select the leaf with the minimum sum.
         min_leaves = []
-        min_ratio = -1
+        min_sum = -1
         for (i, leaf) in enumerate(leaves):
-            compkern = solver_queue[i]
-            ratio = np.inf if len(compkern.completed_nodes) == 0 else leaf.sum_data/len(compkern.completed_nodes)
-            if min_ratio < 0 or ratio < min_ratio:
+            shallow_solve_soln  = solver_queue[i]
+            if min_sum < 0 or leaf.sum_data < min_sum:
                 min_leaves = [MinLeafPackage(
                     leaf,
                     leaf.sum_data,
-                    compkern.layout,
-                    compkern.last_front_layer,
-                    compkern.is_dirty,
-                    compkern.completed_nodes,
-                    leaf.alap_used,
-                    leaf.asap_used,
-                    compkern.type
+                    shallow_solve_soln.layout,
+                    shallow_solve_soln.completed_nodes
                 )] 
                 min_sum = leaf.sum_data
-            elif ratio <= min_ratio + 0.1:
+            elif leaf.sum_data == min_sum:
                 min_leaves.append(MinLeafPackage(
                     leaf,
                     leaf.sum_data,
-                    compkern.layout,
-                    compkern.last_front_layer,
-                    compkern.is_dirty,
-                    compkern.completed_nodes,
-                    leaf.alap_used,
-                    leaf.asap_used,
-                    compkern.type
+                    shallow_solve_soln.layout,
+                    shallow_solve_soln.completed_nodes
                 )) 
         # If we have too many minleaves, then randomly choose a subset of them.
         if len(min_leaves) > self.solution_cap:
@@ -386,7 +337,7 @@ class ForeSight(TransformationPass):
             output_layer_deque = deque([])
             curr = min_leaf.leaf_node
             swap_segments = []  # build swap segments from the tree
-            while curr is not None:
+            while curr != None:
                 output_layer_deque.extendleft(list(curr.obj_data)[::-1])
                 if len(curr.swap_segments) > 0 and curr.swap_segments[0] != 0:
                     swap_segments.extend(curr.swap_segments)
@@ -397,21 +348,15 @@ class ForeSight(TransformationPass):
                 min_leaf.layout,
                 min_leaf.leaf_sum,
                 min_leaf.completed_nodes,
-                min_leaf.last_front_layer,
-                min_leaf.is_dirty,
-                swap_segments=swap_segments[::-1],  # it is backwards because we went from leaf to root
-                alap_used=min_leaf.alap_used,
-                asap_used=min_leaf.asap_used,
-                kernel_type=min_leaf.type
+                swap_segments=swap_segments[::-1]  # it is backwards because we went from leaf to root
             ))
-        return min_solutions
+        return self.deep_solve(dag, primary_layer_view, secondary_layer_view, min_solutions, canonical_register)
                 
     def shallow_solve(
         self, 
         dag,
         primary_layer_view,
         secondary_layer_view,
-        prev_front_layer,
         current_layout,
         canonical_register,
         completed_nodes
@@ -488,7 +433,7 @@ class ForeSight(TransformationPass):
                 target_to_node[(q0, q1)] = node
         # Build PPC and get candidate list.
         if len(path_collection_list) == 0:
-            return [ShallowSolveSolution(output_layers, current_layout, 0, completed_nodes, prev_front_layer)]
+            return [ShallowSolveSolution(output_layers, current_layout, 0, completed_nodes)]
         # This part is pretty much described as "magic" in the paper.
         # This step is heavily rooted in theory for its correctness, so we excluded the
         # explanation.
@@ -510,7 +455,7 @@ class ForeSight(TransformationPass):
                 target_lists.append(target_sub_list)
                 tmp_pl_view.appendleft([target_to_node[target] for target in target_sub_list])
                 tmp_sl_view.appendleft([])
-            solutions = [ShallowSolveSolution(output_layers, current_layout, 0, completed_nodes, prev_front_layer)]
+            solutions = [ShallowSolveSolution(output_layers, current_layout, 0, completed_nodes)]
             while target_lists:
                 target_sub_list = target_lists.pop()
                 next_solutions = []
@@ -519,7 +464,6 @@ class ForeSight(TransformationPass):
                         dag,
                         tmp_pl_view,
                         tmp_sl_view,
-                        prev_front_layer,
                         prev_soln.layout,
                         canonical_register,
                         prev_soln.completed_nodes
@@ -531,8 +475,7 @@ class ForeSight(TransformationPass):
                             prev_layers_cpy,
                             new_soln.layout,
                             prev_soln.num_swaps+new_soln.num_swaps,
-                            new_soln.completed_nodes,
-                            prev_front_layer,
+                            new_soln.completed_nodes
                         ))
                 tmp_pl_view.popleft()
                 tmp_sl_view.popleft()
@@ -582,8 +525,7 @@ class ForeSight(TransformationPass):
                 output_layers_cpy,
                 new_layout,
                 num_swaps,
-                completed_nodes,
-                prev_front_layer
+                completed_nodes
             ))
         for node in front_layer:
             completed_nodes.add(node)
@@ -594,11 +536,10 @@ class ForeSight(TransformationPass):
         dag,
         primary_layer_view,
         secondary_layer_view,
-        front_layer,
         current_layout,
         canonical_register,
         completed_nodes,
-        burst_size=20
+        burst_size=300
     ):
         """
             Extension for ForeSight where we use ASAP routing to
@@ -626,6 +567,10 @@ class ForeSight(TransformationPass):
         output_layers = [] 
         completed_nodes = copy(completed_nodes)
 
+        # setup front layer
+        front_layer = []
+        front_layer.extend(primary_layer_view[0])
+        front_layer.extend(secondary_layer_view[0])
         # setup predecessor table
         pred = defaultdict(int)
         for (_,input_node) in dag.input_map.items():
@@ -653,11 +598,6 @@ class ForeSight(TransformationPass):
                         next_front_layer.append(node)
             if exec_list:
                 for node in exec_list:
-                    for s in self._successors(node,dag):
-                        if node not in completed_nodes:
-                            pred[s] += 1
-                        if pred[s] == len(s.qargs):
-                            next_front_layer.append(s)
                     if node not in completed_nodes:
                         output_layers[-1].append(
                             self._remap_gate_for_layout(node, new_layout, canonical_register)
@@ -665,10 +605,14 @@ class ForeSight(TransformationPass):
                         if len(node.qargs) == 2:
                             completion_count += 1
                         completed_nodes.add(node)
+                    for s in self._successors(node,dag):
+                        if node not in completed_nodes:
+                            pred[s] += 1
+                        if pred[s] == len(s.qargs):
+                            next_front_layer.append(s)
                 front_layer = next_front_layer
                 continue
             if completion_count > burst_size:
-                front_layer = next_front_layer
                 break
             # Nothing is executable, try to swap some qubits.
             # Setup root set
@@ -691,6 +635,7 @@ class ForeSight(TransformationPass):
                         min_score = score
                     elif score == min_score:
                         min_swaps.append((s1,s2))
+                        min_score = score
             # Randomly choose one swap.
             (s1,s2) = min_swaps[np.random.randint(0,high=len(min_swaps))]
             swp_gate = DAGOpNode(
@@ -703,28 +648,12 @@ class ForeSight(TransformationPass):
             )
             new_layout.swap(s1,s2)
             front_layer = next_front_layer
-        # Make sure all operations in front layer are completed (primary_layer_view[0])
-        straggling_solutions = self.shallow_solve(
-            dag,
-            primary_layer_view,
-            secondary_layer_view,
-            front_layer,
+        return [ShallowSolveSolution(
+            output_layers,
             new_layout,
-            canonical_register,
-            completed_nodes,
-        )
-        solutions = []
-        for shallow_solve_soln in straggling_solutions:
-            merged_layers = copy(output_layers) 
-            merged_layers.extend(shallow_solve_soln.output_layers)
-            solutions.append(ShallowSolveSolution(
-                merged_layers,
-                shallow_solve_soln.layout,
-                num_swaps + shallow_solve_soln.num_swaps,
-                shallow_solve_soln.completed_nodes,
-                front_layer
-            ))
-        return solutions
+            num_swaps,
+            completed_nodes
+        )]
 
     def compute_post_primary(self, primary_layer_view, completed_nodes, depth_unaware=False):
         """
@@ -962,8 +891,7 @@ class ForeSight(TransformationPass):
             for node in tmp_front:
                 for s in self._successors(node,dag):
                     inc.append(s)
-                    if node not in completed_nodes:
-                        pred[s] += 1
+                    pred[s] += 1
                     if pred[s] == len(s.qargs):
                         next_front.append(s)
                         if len(s.qargs) == 2 and s not in completed_nodes:
