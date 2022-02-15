@@ -36,12 +36,16 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
 
     data = defaultdict(list)
     if kwargs['noisy']:
-        compare = ['sabre', 'foresight_dynamic']
+        compare = ['sabre','foresight_dynamic']
     elif dataset == 'vqebench':
-        compare = ['sabre','a*', 'foresight_dynamic','tket']
+        compare = ['sabre','a*','foresight_dynamic']
     elif dataset == 'zulehner':
         compare = ['sabre','a*','foresight_dynamic','tket']
     elif dataset == 'qasmbench_medium' or dataset == 'qasmbench_large': 
+        compare = ['sabre','foresight_dynamic']
+    elif dataset == 'bvl' or dataset == 'bvvl':
+        compare = ['sabre','foresight_dynamic']
+    elif dataset == 'qaoareal1' or dataset == 'qaoareal2' or dataset == 'qaoareal3' or dataset == 'qaoa3rvl':
         compare = ['sabre','foresight_dynamic']
     else:
         compare = ['sabre','a*','foresight_dynamic','tket']

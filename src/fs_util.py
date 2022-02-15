@@ -56,12 +56,12 @@ G_QISKIT_GATE_SET = ['u1', 'u2', 'u3', 'cx']
 # BENCHMARK SUITES
 G_QASMBENCH_MEDIUM = [
     'adder_n10',        # single adder
-#    'qft_n15',
-#    'dnn_n8',           # quantum deep neural net
+    'qft_n15',
+    'dnn_n8',           # quantum deep neural net
 #    'cc_n12',           # counterfeit coin
 #    'multiply_n13',
     'multiplier_n15',   # binary multiplier
-    'qf21_n15',         # quantum phase estimation, factor 21           
+#    'qf21_n15',         # quantum phase estimation, factor 21           
     'sat_n11',      
     'seca_n11',         # shor's error correction
     'bv_n14',           # bernstein-vazirani algorithm 
