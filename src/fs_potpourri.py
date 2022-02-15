@@ -13,12 +13,14 @@ from fs_exec import _pad_circuit_to_fit, draw, exec_sim
 from fs_exec import total_variation_distance as TVD
 from fs_foresight import ForeSight
 from fs_util import *
+from fs_benchmark_pass import prerouting_qiskitopt3, postrouting_qiskitopt3
 
 import pandas as pd
 import pickle as pkl
 import matplotlib.pyplot as plt
 
 import os
+import re
 from collections import defaultdict
 
 def convert_integer_to_bstring(num):
@@ -163,34 +165,122 @@ def get_sk_model_trend():
             print('%s: %.3f' % (x, data[x][-1]))
     return data
 
-def vqe_opt3_test():    
-    benchmark_folder, benchmarks = G_QAOA_3RL
-    coupling_map = G_GOOGLE_WEBER
+def parse_log_file(log_file, output_file):
+    reader = open(log_file, 'r')
+
+    data = defaultdict(list)
+    used_benchmarks = []
+
+    line = reader.readline()
+    while line != '':
+        line = line.strip()
+        circ_name_search = re.search('\[(.+?)\]', line)
+        stat_search = re.search('(.+?):\s*(-?\d+?\.\d\d\d)', line)
+        if circ_name_search is not None:
+            used_benchmarks.append(circ_name_search.group(1))
+        elif stat_search is not None:
+            data[stat_search.group(1)].append(float(stat_search.group(2)))
+        else:
+            print(line)
+        line = reader.readline()
+    reader.close()
+    df = pd.DataFrame(data=data, index=used_benchmarks)
+    df.to_csv(output_file)
+
+def plateau_analysis(output_file):
+    benchmark_folder, benchmarks = G_BV_L 
+
+    coupling_map = G_100GRID
+
+    sabre = postrouting_qiskitopt3(coupling_map, routing_pass=SabreSwap(coupling_map, heuristic='decay'))
+    foresight = postrouting_qiskitopt3(coupling_map, routing_pass=ForeSight(
+        coupling_map,
+        slack=3,
+        solution_cap=16,
+        asap_boost=True
+    ))
+    layout_pass = prerouting_qiskitopt3(coupling_map)
+
+    dataset = {}
 
     for qbfile in benchmarks:
-        circ = QuantumCircuit.from_qasm_file('%s/%s' % (benchmark_folder, qbfile))
-        print(qbfile)
-        opts = {0: None, 1: None, 2: None, 3: None}
-        original_counts = exec_sim(circ)
-        for opt_level in [0,1,2,3]:
-            print('opt', opt_level)
-            trans_circ = transpile(
-                circ, 
-                coupling_map=coupling_map,
+        circuit = QuantumCircuit.from_qasm_file('%s/%s' % (benchmark_folder, qbfile))
+        original_cnots = circuit.count_ops()['cx']
+        sabre_array = [0]*100
+        foresight_array = [0]*100
+        for r in range(100):
+            print('run ', r)
+            mapped_circ = layout_pass.run(circuit)
+            sabre_circ = sabre.run(mapped_circ)
+            sabre_circ = transpile(
+                sabre_circ,
                 basis_gates=G_QISKIT_GATE_SET,
-                layout_method='sabre',
-                routing_method='sabre',
-                optimization_level=opt_level
+                layout_method='trivial',
+                routing_method='none',
+                optimization_level=3,
+                approximation_degree=1,
             )
-            opts[opt_level] = trans_circ
-            trans_counts = exec_sim(trans_circ)
-            print(opt_level, TVD(original_counts, trans_counts))
-#        ph(original_counts)
-        for opt_level in [0,1,2,3]:
-            trans_circ = opts[opt_level]
-#            ph(trans_counts)
+            sabre_cnots = sabre_circ.count_ops()['cx'] - original_cnots
+            if r == 0:
+                sabre_array[r] = sabre_cnots
+            else:
+                sabre_array[r] = min(sabre_cnots, sabre_array[r-1])
+            print('sabre[%d] = ' % r, sabre_array[r])
+            foresight_circ = foresight.run(mapped_circ)
+            foresight_circ = transpile(
+                foresight_circ,
+                basis_gates=G_QISKIT_GATE_SET,
+                layout_method='trivial',
+                routing_method='none',
+                optimization_level=3,
+                approximation_degree=1,
+            )
+            foresight_cnots = foresight_circ.count_ops()['cx'] - original_cnots 
+            if r == 0:
+                foresight_array[r] = foresight_cnots    
+            else:
+                foresight_array[r] = min(foresight_cnots, foresight_array[r-1])
+            print('foresight[%d] = ' % r, foresight_array[r])
+        dataset[qbfile] = {
+            'sabre runs': sabre_array,
+            'foresight runs': foresight_array
+        }
+    writer = open(output_file, 'wb')
+    pkl.dump(dataset, writer)
+    writer.close()
 
-def _df_to_pydict(df, perf=False, mem=False, noisy=False, ssonly=False, sim_counts=''):
+def runtime_analysis(output_file):
+    dataset = {}
+
+    for solncap in [2,4,8,16,32]:
+        for delta in [0,1,2,3,4,5]:
+            df_time = pd.read_csv('data/raw/runtime_analysis/bvl_S=%d_D=%d.csv' % (solncap,delta))
+            df_mem = pd.read_csv('data/raw/runtime_analysis/bvl_mem_S=%d_D=%d.csv' % (solncap,delta))
+
+            header_index = 'Unnamed: 0'
+            circuits = list(df_time.index.values)
+            d = {
+                'circuit details': {
+                    df_time[header_index][x]: {
+                        'original cnots': df_time['Original CNOTs'][x],
+                        'qubits': df_time['qubits'][x]
+                    } for x in circuits 
+                },
+                'foresight': {
+                    df_time[header_index][x]: {
+                        'cnots added': df_time['ForeSight-D CNOTs'][x],
+                        'final depth': df_time['ForeSight-D Depth'][x],
+                        'time': df_time['ForeSight-D Time'][x],
+                        'memory': df_mem['ForeSight-D Memory'][x]
+                    } for x in circuits
+                }
+            }
+            dataset[(solncap,delta)] = d
+    writer = open(output_file, 'wb')
+    pkl.dump(dataset, writer)
+    writer.close()
+
+def _df_to_pydict(df, perf=False, mem=False, noisy=False, ssonly=False, tket=False, sim_counts=''):
     if sim_counts != '':
         with open(sim_counts, 'rb') as reader:
             counts = pkl.load(reader) 
@@ -212,26 +302,26 @@ def _df_to_pydict(df, perf=False, mem=False, noisy=False, ssonly=False, sim_coun
                     'sabre tvd': df['SABRE TVD'][x] if noisy else 0.0
                 } for x in list(df.index.values) 
             },
-            'ips': {  # IPS is legacy name, used to not break code
+            'foresight': {
                 df['Unnamed: 0'][x]: {
-                    'cnots added': df['ForeSight CNOTs'][x],
-                    'final depth': df['ForeSight Depth'][x],
-                    'execution time': df['ForeSight Time'][x],
-                    'memory': df['ForeSight Memory'][x] if mem else 0.0,
-                    'ips tvd': df['ForeSight TVD'][x] if noisy else 0.0
+                    'cnots added': df['ForeSight-D CNOTs'][x],
+                    'final depth': df['ForeSight-D Depth'][x],
+                    'execution time': df['ForeSight-D Time'][x],
+                    'memory': df['ForeSight-D Memory'][x] if mem else 0.0,
+                    'ips tvd': df['ForeSight-D TVD'][x] if noisy else 0.0
                 } for x in list(df.index.values) 
             },
-            'noisy ips': {
+            'noisy foresight': {
                 df['Unnamed: 0'][x]: {
-                    'cnots added': df['Noisy ForeSight CNOTs'][x],
-                    'final depth': df['Noisy ForeSight Depth'][x],
-                    'execution time': df['ForeSight Time'][x],
-                    'noisy ips tvd': df['Noisy ForeSight TVD'][x],
+                    'cnots added': df['Noisy ForeSight-D CNOTs'][x],
+                    'final depth': df['Noisy ForeSight-D Depth'][x],
+                    'execution time': df['ForeSight-D Time'][x],
+                    'noisy ips tvd': df['Noisy ForeSight-D TVD'][x],
                     'relative tvd to sabre': df['SABRE Relative TVD'][x],
-                    'relative tvd to foresight': df['ForeSight Relative TVD'][x]
+                    'relative tvd to foresight': df['ForeSight-D Relative TVD'][x]
                 } for x in list(df.index.values)
             } if noisy else {},
-            'ips (shallow solve only)': {
+            'foresight (shallow solve only)': {
                 df['Unnamed: 0'][x]: {
                     'cnots added': df['ForeSight SSOnly CNOTs'][x],
                     'final depth': df['ForeSight SSOnly Depth'][x],
@@ -239,12 +329,6 @@ def _df_to_pydict(df, perf=False, mem=False, noisy=False, ssonly=False, sim_coun
                     'memory': df['ForeSight SSOnly Memory'][x] if mem else 0.0 
                 } for x in list(df.index.values) 
             } if ssonly else {},
-            'best of sabre and ips': {
-                df['Unnamed: 0'][x]: {
-                    'cnots added': df['Best CNOTs'][x],
-                    'final depth': df['Best Depth'][x]
-                } for x in list(df.index.values)
-            } if perf else {},
             'astar': {
                 df['Unnamed: 0'][x]: {
                     'cnots added': df['A* CNOTs'][x],
@@ -252,16 +336,24 @@ def _df_to_pydict(df, perf=False, mem=False, noisy=False, ssonly=False, sim_coun
                     'execution time': df['A* Time'][x],
                     'memory': df['A* Memory'][x] if mem else 0.0
                 } for x in list(df.index.values) 
-            } if perf else {}
+            } if perf else {},
+            'tket': {
+                df['Unnamed: 0'][x]: {
+                    'cnots added': df['TKET CNOTs'][x],
+                    'final depth': df['TKET Depth'][x],
+                    'execution time': df['TKET Time'][x],
+                    'memory': df['TKET Memory'][x] if mem else 0.0
+                } for x in list(df.index.values) if tket 
+            }
         }
     return d
 
 def get_swaps_dataset(pickle_file, excel_sub_type):
     dataset = {}
 
-    for coupling_map in ['toronto','aspen9', 'weber', 'tokyo']:
-        df = pd.read_excel('data/%s_%s.xlsx' % (coupling_map, excel_sub_type))
-        dataset[coupling_map] = _df_to_pydict(df, perf=True, mem=True, ssonly=True)
+    for coupling_map in ['aspen', 'weber', 'tokyo']:
+        df = pd.read_csv('data/raw/performance/with_qiskitopt3/%s_%s.csv' % (coupling_map, excel_sub_type))
+        dataset[coupling_map] = _df_to_pydict(df, perf=True, mem=False, ssonly=False, tket=True)
     # pickle dataset
     with open(pickle_file, 'wb') as writer:
         pkl.dump(dataset, writer)

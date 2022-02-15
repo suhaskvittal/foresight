@@ -127,26 +127,26 @@ class BenchmarkPass(AnalysisPass):
         self.foresight_d_router = ForeSight(
                 coupling_map,
                 slack=slack,
-                solution_cap=solution_cap//2,
+                solution_cap=solution_cap,
                 asap_boost=True,
                 approx_asap=True,
                 debug=kwargs['debug']
         )
-        self.foresight_asap_router = ForeSight(
-                coupling_map,
-                slack=slack,
-                solution_cap=solution_cap//2,
-                asap_boost=True,
-                asap_only=True,
-                debug=kwargs['debug']
-        )
+#        self.foresight_asap_router = ForeSight(
+#                coupling_map,
+#                slack=slack,
+#                solution_cap=solution_cap//2,
+#                asap_boost=True,
+#                asap_only=True,
+#                debug=kwargs['debug']
+#        )
         self.benchmark_passes = {
             'sabre': ('SABRE', postrouting_qiskitopt3(coupling_map, routing_pass=self.sabre_router)), 
             'foresight': ('ForeSight', postrouting_qiskitopt3(coupling_map, routing_pass=self.foresight_router)),
             'foresight_ssonly': ('ForeSight SSOnly', postrouting_qiskitopt3(coupling_map, routing_pass=self.foresight_ssonly_router)),
             'foresight_noisy': ('Noisy ForeSight', postrouting_qiskitopt3(coupling_map, routing_pass=self.foresight_noisy_router)),
             'foresight_dynamic': ('ForeSight-D', postrouting_qiskitopt3(coupling_map, routing_pass=self.foresight_d_router)),
-            'foresight_asap': ('Foresight-ASAP', postrouting_qiskitopt3(coupling_map, routing_pass=self.foresight_asap_router)),
+#            'foresight_asap': ('Foresight-ASAP', postrouting_qiskitopt3(coupling_map, routing_pass=self.foresight_asap_router)),
             'a*': ('A*', None),
             'tket': ('TKET', None)
         }
@@ -223,8 +223,8 @@ class BenchmarkPass(AnalysisPass):
                 # Define callback function
                 def cb(pass_, dag, **kwargs):
                     pass_name = type(pass_).__name__ 
-                    if pass_name == 'ConsolidateBlocks' or pass_name == 'UnitarySynthesis' or pass_name == 'ContainsInstruction':
-                        print('\t\t\t%s' % pass_name, dag.count_ops())
+#                    if pass_name == 'ConsolidateBlocks' or pass_name == 'UnitarySynthesis' or pass_name == 'ContainsInstruction':
+#                        print('\t\t\t%s' % pass_name, dag.count_ops())
                     if pass_name == 'ConsolidateBlocks' and 'unitary' in dag.count_ops():
                         self.consolidated_blocks += dag.count_ops()['unitary']
                 # Transpile circuit
@@ -264,22 +264,25 @@ class BenchmarkPass(AnalysisPass):
             sabre_counts = exec_sim(best_circuits['sabre'], basis_gates=self.basis_gates, noise_model=self.noise_model) 
             self.benchmark_results['SABRE TVD'] = total_variation_distance(ideal_counts, sabre_counts)
             # Foresight
-            foresight_counts = exec_sim(best_circuits['foresight'], basis_gates=self.basis_gates, noise_model=self.noise_model) 
+            foresight_counts = exec_sim(best_circuits['foresight_dynamic'], basis_gates=self.basis_gates, noise_model=self.noise_model) 
             self.benchmark_results['ForeSight TVD'] = total_variation_distance(ideal_counts, foresight_counts)
+            print(foresight_counts, ideal_counts)
             # Noisy ForeSight
-            noisy_foresight_counts = exec_sim(best_circuits['foresight_noisy'], basis_gates=self.basis_gates, noise_model=self.noise_model)
-            self.benchmark_results['Noisy ForeSight TVD'] = total_variation_distance(ideal_counts, noisy_foresight_counts)
-            # Relative
-            self.benchmark_results['SABRE Relative TVD'] = self.benchmark_results['Noisy ForeSight TVD']\
-                                                                    / self.benchmark_results['SABRE TVD']
-            self.benchmark_results['ForeSight Relative TVD'] = self.benchmark_results['Noisy ForeSight TVD']\
-                                                                    / self.benchmark_results['ForeSight TVD']
+            if self.noise_model:
+                noisy_foresight_counts = exec_sim(best_circuits['foresight_noisy'], basis_gates=self.basis_gates, noise_model=self.noise_model)
+                self.benchmark_results['Noisy ForeSight TVD'] = total_variation_distance(ideal_counts, noisy_foresight_counts)
+                # Relative
+                self.benchmark_results['SABRE Relative TVD'] = self.benchmark_results['Noisy ForeSight TVD']\
+                                                                        / self.benchmark_results['SABRE TVD']
+                self.benchmark_results['ForeSight Relative TVD'] = self.benchmark_results['Noisy ForeSight TVD']\
+                                                                        / self.benchmark_results['ForeSight TVD']
             # Save counts
             counts_dict = {
                 'sabre': sabre_counts,
-                'foresight': foresight_counts,
-                'noisy foresight': noisy_foresight_counts
+                'foresight_dynamic': foresight_counts,
             }
+            if self.noise_model:
+                counts_dict['noisy foresight'] = noisy_foresight_counts 
             self.simulation_counts = counts_dict
 
         # Some circuit statistics as well.

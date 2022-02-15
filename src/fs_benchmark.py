@@ -33,18 +33,17 @@ import traceback
 import pickle as pkl
     
 def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv', runs=5, **kwargs):
-
     data = defaultdict(list)
     if kwargs['noisy']:
-        compare = ['sabre', 'foresight']
+        compare = ['sabre', 'foresight_dynamic']
     elif dataset == 'vqebench':
-        compare = ['sabre', 'foresight', 'a*', 'foresight_dynamic']
+        compare = ['sabre', 'a*', 'foresight_dynamic','tket']
     elif dataset == 'zulehner':
-        compare = ['sabre', 'foresight','a*','foresight_dynamic','tket']
+        compare = ['sabre', 'a*','foresight_dynamic','tket']
     elif dataset == 'qasmbench_medium' or dataset == 'qasmbench_large': 
-        compare = ['sabre','foresight_asap', 'foresight_dynamic']
+        compare = ['sabre', 'foresight_dynamic']
     else:
-        compare = ['sabre', 'foresight', 'foresight_dynamic']
+        compare = ['sabre', 'foresight_dynamic']
     benchmark_pass = BenchmarkPass(coupling_map, arch_file, runs=runs, compare=compare, compute_stats=False, **kwargs)
     benchmark_pm = PassManager([
         benchmark_pass
@@ -79,6 +78,7 @@ def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv
 
     used_benchmarks = []
     sim_counts = {}
+    reached = False
     for qb_file in benchmark_suite:
         if dataset == 'qasmbench_medium':
             circ = QuantumCircuit.from_qasm_file('benchmarks/qasmbench/medium/%s/%s.qasm' % (qb_file, qb_file))    
