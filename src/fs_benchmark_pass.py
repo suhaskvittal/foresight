@@ -223,8 +223,8 @@ class BenchmarkPass(AnalysisPass):
                 # Define callback function
                 def cb(pass_, dag, **kwargs):
                     pass_name = type(pass_).__name__ 
-                    if pass_name == 'ConsolidateBlocks' or pass_name == 'UnitarySynthesis' or pass_name == 'ContainsInstruction':
-                        print('\t\t\t%s' % pass_name, dag.count_ops())
+#                    if pass_name == 'ConsolidateBlocks' or pass_name == 'UnitarySynthesis' or pass_name == 'ContainsInstruction':
+#                        print('\t\t\t%s' % pass_name, dag.count_ops())
                     if pass_name == 'ConsolidateBlocks' and 'unitary' in dag.count_ops():
                         self.consolidated_blocks += dag.count_ops()['unitary']
                 # Transpile circuit
@@ -264,22 +264,24 @@ class BenchmarkPass(AnalysisPass):
             sabre_counts = exec_sim(best_circuits['sabre'], basis_gates=self.basis_gates, noise_model=self.noise_model) 
             self.benchmark_results['SABRE TVD'] = total_variation_distance(ideal_counts, sabre_counts)
             # Foresight
-            foresight_counts = exec_sim(best_circuits['foresight'], basis_gates=self.basis_gates, noise_model=self.noise_model) 
+            foresight_counts = exec_sim(best_circuits['foresight_dynamic'], basis_gates=self.basis_gates, noise_model=self.noise_model) 
             self.benchmark_results['ForeSight TVD'] = total_variation_distance(ideal_counts, foresight_counts)
             # Noisy ForeSight
-            noisy_foresight_counts = exec_sim(best_circuits['foresight_noisy'], basis_gates=self.basis_gates, noise_model=self.noise_model)
-            self.benchmark_results['Noisy ForeSight TVD'] = total_variation_distance(ideal_counts, noisy_foresight_counts)
-            # Relative
-            self.benchmark_results['SABRE Relative TVD'] = self.benchmark_results['Noisy ForeSight TVD']\
-                                                                    / self.benchmark_results['SABRE TVD']
-            self.benchmark_results['ForeSight Relative TVD'] = self.benchmark_results['Noisy ForeSight TVD']\
-                                                                    / self.benchmark_results['ForeSight TVD']
+            if self.noise_model:
+                noisy_foresight_counts = exec_sim(best_circuits['foresight_noisy'], basis_gates=self.basis_gates, noise_model=self.noise_model)
+                self.benchmark_results['Noisy ForeSight TVD'] = total_variation_distance(ideal_counts, noisy_foresight_counts)
+                # Relative
+                self.benchmark_results['SABRE Relative TVD'] = self.benchmark_results['Noisy ForeSight TVD']\
+                                                                        / self.benchmark_results['SABRE TVD']
+                self.benchmark_results['ForeSight Relative TVD'] = self.benchmark_results['Noisy ForeSight TVD']\
+                                                                        / self.benchmark_results['ForeSight TVD']
             # Save counts
             counts_dict = {
                 'sabre': sabre_counts,
                 'foresight': foresight_counts,
-                'noisy foresight': noisy_foresight_counts
             }
+            if self.noise_model:
+                counts_dict['noisy foresight'] = noisy_foresight_counts
             self.simulation_counts = counts_dict
 
         # Some circuit statistics as well.

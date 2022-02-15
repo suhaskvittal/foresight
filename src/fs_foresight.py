@@ -272,12 +272,15 @@ class ForeSight(TransformationPass):
                 kernel_type=deep_solve_soln.type,
             ))
         while len(solver_queue) <= 2*self.solution_cap:
+            print(len(solver_queue), len(primary_layer_view))
+            print([x.type for x in solver_queue])
             if len(primary_layer_view) == 0:
                 break
             next_solver_queue = []
             next_leaves = []
             for compkern in solver_queue:  # Empty out queue into next_solver_queue.
                 parent = leaves[compkern.parent_id]
+                print('\t',compkern.type)
                 if compkern.type == 'asap':
                     solutions = self.asap_burst_solve(
                         dag,
@@ -301,31 +304,29 @@ class ForeSight(TransformationPass):
                 # Apply solutions non-deterministically to current_dag.
                 for (i, shallow_solve_soln) in enumerate(solutions):
                     # Create node for each candidate solution.
-                    node = SumTreeNode(
-                        shallow_solve_soln.output_layers,
-                        parent.sum_data + shallow_solve_soln.num_swaps,
-                        parent,
-                        [],
-                        swap_segments=[shallow_solve_soln.num_swaps],
-                        alap_used=(1 if compkern.type == 'alap' else 0)+parent.alap_used,
-                        asap_used=(1 if compkern.type == 'asap' else 0)+parent.asap_used,
-                    )
-                    parent.children.append(node)
-                    next_leaves.append(node)
-                    # Create a child kernel
                     num_children = 0
                     for kernel_type in ['asap','alap']:
                         if kernel_type == 'asap' and not self.use_asap_boost:
                             continue
                         if kernel_type == 'alap' and self.use_asap_only:
                             continue
-#                        if kernel_type == 'asap' and compkern.type == 'alap' and compkern.is_dirty:
-#                        if kernel_type != compkern.type:
-                        if kernel_type == 'alap' and compkern.type == 'asap':
+                        if self.approx_asap and compkern.type != kernel_type and np.random.random() > 0.25:
                             continue
-#                        if self.approx_asap and compkern.type != kernel_type and np.random.random() >= 0.25:
-#                            continue
+                        if compkern.type == 'alap' and kernel_type == 'asap' and compkern.is_dirty:
+                            continue
                         is_dirty = (kernel_type == 'asap' and compkern.type == 'alap') or compkern.is_dirty
+                        node = SumTreeNode(
+                            shallow_solve_soln.output_layers,
+                            parent.sum_data + shallow_solve_soln.num_swaps,
+                            parent,
+                            [],
+                            swap_segments=[shallow_solve_soln.num_swaps],
+                            alap_used=(1 if compkern.type == 'alap' else 0)+parent.alap_used,
+                            asap_used=(1 if compkern.type == 'asap' else 0)+parent.asap_used,
+                        )
+                        parent.children.append(node)
+                        next_leaves.append(node)
+                        # Create a child kernel
                         next_solver_queue.append(ComputationKernel(
                             shallow_solve_soln.layout,
                             len(next_leaves) - 1,
@@ -594,11 +595,11 @@ class ForeSight(TransformationPass):
         dag,
         primary_layer_view,
         secondary_layer_view,
-        front_layer,
+        prev_front_layer,
         current_layout,
         canonical_register,
         completed_nodes,
-        burst_size=20
+        burst_size=100
     ):
         """
             Extension for ForeSight where we use ASAP routing to
@@ -626,6 +627,7 @@ class ForeSight(TransformationPass):
         output_layers = [] 
         completed_nodes = copy(completed_nodes)
 
+        front_layer = prev_front_layer
         # setup predecessor table
         pred = defaultdict(int)
         for (_,input_node) in dag.input_map.items():
