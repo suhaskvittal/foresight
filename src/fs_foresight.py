@@ -667,8 +667,8 @@ class ForeSight(TransformationPass):
         front_layer.extend(secondary_layer_view[0])
         # setup predecessor table
         pred = defaultdict(int)
-        for x in self.base_pred:
-            pred[x] = self.base_pred[x]
+        #for x in self.base_pred:
+        #    pred[x] = self.base_pred[x]
         # copy layout
         new_layout = current_layout.copy()
         completion_count = 0
@@ -689,6 +689,8 @@ class ForeSight(TransformationPass):
             if exec_list:
                 for node in exec_list:
                     for s in self._successors(node,dag):
+                        if s not in pred:
+                            pred[s] = self.base_pred[s]
                         pred[s] += 1
                         if pred[s] == len(s.qargs):
                             next_front_layer.append(s)

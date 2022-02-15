@@ -46,7 +46,7 @@ def vqe_swapsegment_plotgen(coupling_map, foresight, foresight_d, sabre, runs=5,
 
     routing_list = [
         ('ForeSight', foresight_pass, foresight),
-        ('Foresight-D', foresight_d_pass, foresight_d), 
+#        ('Foresight-D', foresight_d_pass, foresight_d), 
         ('SABRE', sabre_pass, sabre)
     ]
 

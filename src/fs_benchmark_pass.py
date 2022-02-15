@@ -127,7 +127,7 @@ class BenchmarkPass(AnalysisPass):
         self.foresight_d_router = ForeSight(
                 coupling_map,
                 slack=slack,
-                solution_cap=solution_cap//2,
+                solution_cap=solution_cap,
                 asap_boost=True,
                 approx_asap=True,
                 debug=kwargs['debug']
@@ -135,7 +135,7 @@ class BenchmarkPass(AnalysisPass):
         self.foresight_asap_router = ForeSight(
                 coupling_map,
                 slack=slack,
-                solution_cap=solution_cap//2,
+                solution_cap=solution_cap,
                 asap_boost=True,
                 asap_only=True,
                 debug=kwargs['debug']

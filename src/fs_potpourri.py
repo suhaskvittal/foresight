@@ -163,34 +163,8 @@ def get_sk_model_trend():
             print('%s: %.3f' % (x, data[x][-1]))
     return data
 
-def vqe_opt3_test():    
-    benchmark_folder, benchmarks = G_QAOA_3RL
-    coupling_map = G_GOOGLE_WEBER
 
-    for qbfile in benchmarks:
-        circ = QuantumCircuit.from_qasm_file('%s/%s' % (benchmark_folder, qbfile))
-        print(qbfile)
-        opts = {0: None, 1: None, 2: None, 3: None}
-        original_counts = exec_sim(circ)
-        for opt_level in [0,1,2,3]:
-            print('opt', opt_level)
-            trans_circ = transpile(
-                circ, 
-                coupling_map=coupling_map,
-                basis_gates=G_QISKIT_GATE_SET,
-                layout_method='sabre',
-                routing_method='sabre',
-                optimization_level=opt_level
-            )
-            opts[opt_level] = trans_circ
-            trans_counts = exec_sim(trans_circ)
-            print(opt_level, TVD(original_counts, trans_counts))
-#        ph(original_counts)
-        for opt_level in [0,1,2,3]:
-            trans_circ = opts[opt_level]
-#            ph(trans_counts)
-
-def _df_to_pydict(df, perf=False, mem=False, noisy=False, ssonly=False, sim_counts=''):
+def _df_to_pydict(df, perf=False, mem=False, noisy=False, sim_counts=''):
     if sim_counts != '':
         with open(sim_counts, 'rb') as reader:
             counts = pkl.load(reader) 
@@ -212,45 +186,39 @@ def _df_to_pydict(df, perf=False, mem=False, noisy=False, ssonly=False, sim_coun
                     'sabre tvd': df['SABRE TVD'][x] if noisy else 0.0
                 } for x in list(df.index.values) 
             },
-            'ips': {  # IPS is legacy name, used to not break code
+            'foresight': {  # IPS is legacy name, used to not break code
                 df['Unnamed: 0'][x]: {
-                    'cnots added': df['ForeSight CNOTs'][x],
-                    'final depth': df['ForeSight Depth'][x],
-                    'execution time': df['ForeSight Time'][x],
-                    'memory': df['ForeSight Memory'][x] if mem else 0.0,
-                    'ips tvd': df['ForeSight TVD'][x] if noisy else 0.0
+                    'cnots added': df['ForeSight-D CNOTs'][x],
+                    'final depth': df['ForeSight-D Depth'][x],
+                    'execution time': df['ForeSight-D Time'][x],
+                    'memory': df['ForeSight-D Memory'][x] if mem else 0.0,
+                    'foresight tvd': df['ForeSight-D TVD'][x] if noisy else 0.0
                 } for x in list(df.index.values) 
             },
-            'noisy ips': {
+            'noisy foresight': {
                 df['Unnamed: 0'][x]: {
                     'cnots added': df['Noisy ForeSight CNOTs'][x],
                     'final depth': df['Noisy ForeSight Depth'][x],
                     'execution time': df['ForeSight Time'][x],
-                    'noisy ips tvd': df['Noisy ForeSight TVD'][x],
+                    'noisy foresight tvd': df['Noisy ForeSight TVD'][x],
                     'relative tvd to sabre': df['SABRE Relative TVD'][x],
                     'relative tvd to foresight': df['ForeSight Relative TVD'][x]
                 } for x in list(df.index.values)
             } if noisy else {},
-            'ips (shallow solve only)': {
-                df['Unnamed: 0'][x]: {
-                    'cnots added': df['ForeSight SSOnly CNOTs'][x],
-                    'final depth': df['ForeSight SSOnly Depth'][x],
-                    'execution time': df['ForeSight SSOnly Time'][x],
-                    'memory': df['ForeSight SSOnly Memory'][x] if mem else 0.0 
-                } for x in list(df.index.values) 
-            } if ssonly else {},
-            'best of sabre and ips': {
-                df['Unnamed: 0'][x]: {
-                    'cnots added': df['Best CNOTs'][x],
-                    'final depth': df['Best Depth'][x]
-                } for x in list(df.index.values)
-            } if perf else {},
             'astar': {
                 df['Unnamed: 0'][x]: {
                     'cnots added': df['A* CNOTs'][x],
                     'final depth': df['A* Depth'][x],
                     'execution time': df['A* Time'][x],
                     'memory': df['A* Memory'][x] if mem else 0.0
+                } for x in list(df.index.values) 
+            } if perf else {},
+            'tket': {
+                df['Unnamed: 0'][x]: {
+                    'cnots added': df['TKET CNOTs'][x],
+                    'final depth': df['TKET Depth'][x],
+                    'execution time': df['TKET Time'][x],
+                    'memory': df['TKET Memory'][x] if mem else 0.0
                 } for x in list(df.index.values) 
             } if perf else {}
         }
@@ -259,9 +227,10 @@ def _df_to_pydict(df, perf=False, mem=False, noisy=False, ssonly=False, sim_coun
 def get_swaps_dataset(pickle_file, excel_sub_type):
     dataset = {}
 
-    for coupling_map in ['toronto','aspen9', 'weber', 'tokyo']:
-        df = pd.read_excel('data/%s_%s.xlsx' % (coupling_map, excel_sub_type))
-        dataset[coupling_map] = _df_to_pydict(df, perf=True, mem=True, ssonly=True)
+    for coupling_map in ['aspen9', 'weber', 'tokyo']:
+        df = pd.read_csv('data/raw/performance/with_qiskitopt3/%s_%s.csv'\
+            % (coupling_map, excel_sub_type))
+        dataset[coupling_map] = _df_to_pydict(df, perf=True, mem=False)
     # pickle dataset
     with open(pickle_file, 'wb') as writer:
         pkl.dump(dataset, writer)
