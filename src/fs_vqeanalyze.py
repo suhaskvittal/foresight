@@ -46,7 +46,6 @@ def vqe_swapsegment_plotgen(coupling_map, foresight, foresight_d, sabre, runs=5,
 
     routing_list = [
         ('ForeSight', foresight_pass, foresight),
-        ('Foresight-D', foresight_d_pass, foresight_d), 
         ('SABRE', sabre_pass, sabre)
     ]
 
@@ -103,7 +102,7 @@ def vqe_swapsegment_plotgen(coupling_map, foresight, foresight_d, sabre, runs=5,
 
 if __name__ == '__main__':
     coupling_map = G_GOOGLE_WEBER
-    foresight = ForeSight(coupling_map, slack=3, solution_cap=32)
+    foresight = ForeSight(coupling_map, slack=3, solution_cap=16)
     foresight_d = ForeSight(coupling_map, slack=3, solution_cap=16, asap_boost=True)
     sabre = StatSABRE(coupling_map, heuristic='decay')
     vqe_swapsegment_plotgen(coupling_map, foresight, foresight_d, sabre, runs=5)

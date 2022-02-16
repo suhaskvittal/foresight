@@ -268,7 +268,6 @@ class ForeSight(TransformationPass):
                     kernel_type='asap'
                 ))
         while len(solver_queue) <= 2*self.solution_cap:
-            print(len(solver_queue), len(primary_layer_view))
             if len(primary_layer_view) == 0:
                 break
             next_solver_queue = []
@@ -298,6 +297,8 @@ class ForeSight(TransformationPass):
                     # Create node for each candidate solution.
                     # Create a child kernel
                     for kernel_type in ['alap', 'asap']:
+                        if not self.use_asap_boost and kernel_type == 'asap':
+                            continue
                         node = SumTreeNode(
                             shallow_solve_soln.output_layers,
                             parent.sum_data + shallow_solve_soln.num_swaps,

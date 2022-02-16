@@ -54,8 +54,9 @@ class BenchmarkPass(AnalysisPass):
         **kwargs
     ):
         """
-            Qiskit Pass for benchmarking. We benchmark according to 
-            Qiskit optimization level 3. Each run on a circuit yields
+            Qiskit Pass for benchmarking. 
+
+            Each run on a circuit yields
             a mapping from SabreLayout -- the lowest SWAP outcome on
             all runs is recorded.
 
@@ -88,6 +89,7 @@ class BenchmarkPass(AnalysisPass):
         # Parse kwargs
         self.simulate = kwargs['sim']
         self.measure_memory = kwargs['mem']
+        self.use_opt3 = kwargs['opt3']
         # Set up noise model
         if kwargs['noisy']:
             self.noise_model, edge_weights, vertex_weights, readout_weights = kwargs['noise_model']
@@ -236,7 +238,7 @@ class BenchmarkPass(AnalysisPass):
                     coupling_map=self.coupling_map,
                     layout_method='trivial',
                     routing_method='none',
-                    optimization_level=3,
+                    optimization_level=3 if self.use_opt3 else 0,
                     approximation_degree=1,
                     callback=cb
                 )
@@ -264,7 +266,7 @@ class BenchmarkPass(AnalysisPass):
             sabre_counts = exec_sim(best_circuits['sabre'], basis_gates=self.basis_gates, noise_model=self.noise_model) 
             self.benchmark_results['SABRE TVD'] = total_variation_distance(ideal_counts, sabre_counts)
             # Foresight
-            foresight_counts = exec_sim(best_circuits['foresight_dynamic'], basis_gates=self.basis_gates, noise_model=self.noise_model) 
+            foresight_counts = exec_sim(best_circuits['foresight'], basis_gates=self.basis_gates, noise_model=self.noise_model) 
             self.benchmark_results['ForeSight TVD'] = total_variation_distance(ideal_counts, foresight_counts)
             print(foresight_counts, ideal_counts)
             # Noisy ForeSight

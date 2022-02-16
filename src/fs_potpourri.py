@@ -197,7 +197,6 @@ def plateau_analysis(output_file):
         coupling_map,
         slack=3,
         solution_cap=16,
-        asap_boost=True
     ))
     layout_pass = prerouting_qiskitopt3(coupling_map)
 
@@ -217,7 +216,7 @@ def plateau_analysis(output_file):
                 basis_gates=G_QISKIT_GATE_SET,
                 layout_method='trivial',
                 routing_method='none',
-                optimization_level=3,
+                optimization_level=0,
                 approximation_degree=1,
             )
             sabre_cnots = sabre_circ.count_ops()['cx'] - original_cnots

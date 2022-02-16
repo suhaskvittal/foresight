@@ -35,15 +35,15 @@ import pickle as pkl
 def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv', runs=5, **kwargs):
     data = defaultdict(list)
     if kwargs['noisy']:
-        compare = ['sabre', 'foresight_dynamic']
+        compare = ['sabre', 'foresight']
     elif dataset == 'vqebench':
-        compare = ['sabre', 'a*', 'foresight_dynamic','tket']
+        compare = ['sabre', 'a*', 'foresight','tket']
     elif dataset == 'zulehner':
-        compare = ['sabre', 'a*','foresight_dynamic','tket']
+        compare = ['sabre', 'a*','foresight','tket']
     elif dataset == 'qasmbench_medium' or dataset == 'qasmbench_large': 
-        compare = ['sabre', 'foresight_dynamic']
+        compare = ['sabre', 'foresight']
     else:
-        compare = ['sabre', 'foresight_dynamic']
+        compare = ['sabre', 'foresight']
     benchmark_pass = BenchmarkPass(coupling_map, arch_file, runs=runs, compare=compare, compute_stats=False, **kwargs)
     benchmark_pm = PassManager([
         benchmark_pass
@@ -124,6 +124,7 @@ if __name__ == '__main__':
         'debug': False,
         'noisy': False,
         'mem': True,
+        'opt3': False,
         'slack': G_FORESIGHT_SLACK,
         'solncap': G_FORESIGHT_SOLN_CAP,
         'noise_factor': 1.0
@@ -135,6 +136,7 @@ if __name__ == '__main__':
         print('\t--debug = print out debug messages.')
         print('\t--noisy = perform noisy routing (along with simulation if asked) -- only supported for Google Sycamore, Weber Architecture.')
         print('\t--nomem = do not measure memory usage (decreases time taken).')
+        print('\t--opt3 = use qiskit optimization 3.')
         print('\t--dataset <d> where d is one of')
         print('\t\tzulehner (circuits used by Zulehner et al. in the A* paper)')
         print('\t\tzulehner_partial (a small selection of Zulehner et al.\'s circuits)')
@@ -172,6 +174,8 @@ if __name__ == '__main__':
             benchmark_kwargs['noisy'] = True
         elif arg == '--nomem':
             benchmark_kwargs['mem'] = False
+        elif arg == '--opt3':
+            benchmark_kwargs['opt3'] = True
         elif arg == '--dataset':
             mode = argv[i+1]
             i += 1

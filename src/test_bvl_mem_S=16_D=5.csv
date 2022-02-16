@@ -1,3 +1,0 @@
-,Original CNOTs,SABRE CNOTs,SABRE Depth,SABRE Time,SABRE Memory,SABRE Consolidated Blocks,ForeSight CNOTs,ForeSight Depth,ForeSight Time,ForeSight Memory,ForeSight Consolidated Blocks,ForeSight-D CNOTs,ForeSight-D Depth,ForeSight-D Time,ForeSight-D Memory,ForeSight-D ALAP Proportion,ForeSight-D ASAP Proportion,ForeSight-D Consolidated Blocks,qubits
-bv_n50.qasm,49,107,149,4.721756243,2134.060546875,5,89,139,23.737118839000004,1995.7001953125,4,69,90,30.925475996000003,5367.6318359375,29,23,8,50
-bv_n100.qasm,99,572,387,9.471501321999995,1020.5107421875,9,340,393,71.749331466,1370.693359375,13,282,259,72.37970530800001,8878.0625,62,40,15,100
