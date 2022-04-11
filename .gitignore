@@ -1,3 +1,7 @@
 src/venv/
 src/*.pbs*
 src/jobs/
+benchmarks
+benchmarks/*
+data
+data/*

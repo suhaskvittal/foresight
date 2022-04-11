@@ -11,13 +11,7 @@ import pickle as pkl
 from os import listdir
 from os.path import isfile, join
 
-def _get_qasm_files(folder):
-    return folder, [
-        f for f in listdir(folder)\
-        if isfile(join(folder, f)) and f.endswith('.qasm')
-    ]
-
-def _read_arch_file(arch_file):
+def read_arch_file(arch_file):
     reader = open(arch_file, 'r')
     # Don't need first line.
     reader.readline()
@@ -32,66 +26,12 @@ def _read_arch_file(arch_file):
     reader.close()
     return CouplingMap(edges)
 
-# COUPLING MAPS
-G_IBM_TORONTO = _read_arch_file('arch/ibm_toronto.arch')
-G_GOOGLE_WEBER = _read_arch_file('arch/google_weber.arch')
-G_RIGETTI_ASPEN9 = _read_arch_file('arch/rigetti_aspen9.arch')
-G_IBM_TOKYO = _read_arch_file('arch/ibm_tokyo.arch')
-G_IBM_3HEAVYHEX = _read_arch_file('arch/ibm_3heavyhex.arch')
-G_100GRID = _read_arch_file('arch/100grid.arch')
-G_500GRID = _read_arch_file('arch/500grid.arch')
-
 # GATE SETS
 G_QISKIT_GATE_SET = ['u1', 'u2', 'u3', 'cx']
 
-# BENCHMARK SUITES
-G_QASMBENCH_MEDIUM = [
-    'adder_n10',        # single adder
-#    'qft_n15',
-    'dnn_n8',           # quantum deep neural net
-#    'cc_n12',           # counterfeit coin
-#    'multiply_n13',
-    'multiplier_n15',   # binary multiplier
-    'qf21_n15',         # quantum phase estimation, factor 21           
-    'sat_n11',      
-    'seca_n11',         # shor's error correction
-    'bv_n14',           # bernstein-vazirani algorithm 
-    'ising_n10',        # ising gate sim
-    'qaoa_n6',          
-    'qpe_n9',           # quantum phase estimation
-#    'simon_n6',         # simon's algorithm 
-    'vqe_uccsd_n6',
-    'vqe_uccsd_n8'
-]
-G_QASMBENCH_LARGE = [
-    'bigadder_n18',     # ripple carry adder    
-#    'qft_n20',
-    'ising_n26',        # ising gate sim
-    'bv_n19',           # bernstein-vazirani algorithm  
-    'dnn_n16',          # quantum deep neural net
-    'multiplier_n25',   # binary multiplier
-    'wstate_n27',       
-    'ghz_state_n23',
-    'cat_state_n22',    
-    'square_root_n18',  # square root   
-    'cc_n18'            # counterfeit coin
-]
-G_ZULEHNER = _get_qasm_files('benchmarks/zulehner')
-G_ZULEHNER_PARTIAL = _get_qasm_files('benchmarks/zulehner_partial')
-G_QAOA_SK = _get_qasm_files('benchmarks/qaoa_sk')
-G_QAOA_3RL = _get_qasm_files('benchmarks/qaoa_3r_large')
-G_QAOA_3RVL = _get_qasm_files('benchmarks/qaoa_3r_vlarge')
-G_BV_L = _get_qasm_files('benchmarks/bv_large')
-G_BV_VL = _get_qasm_files('benchmarks/bv_vlarge')
-G_NOISY = _get_qasm_files('benchmarks/noisybench')
-G_VQE = _get_qasm_files('benchmarks/vqebench')
-G_QAOA_REAL1 = _get_qasm_files('benchmarks/qaoa_real_1L')
-G_QAOA_REAL2 = _get_qasm_files('benchmarks/qaoa_real_2L')
-G_QAOA_REAL3 = _get_qasm_files('benchmarks/qaoa_real_3L')
-
 # ALGORITHM PARAMETERS
 G_FORESIGHT_SOLN_CAP = 32
-G_FORESIGHT_SLACK = 3
+G_FORESIGHT_SLACK = 2
 
 def _soln_hash_f(soln):
     h = 0

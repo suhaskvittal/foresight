@@ -14,11 +14,10 @@ from qiskit.visualization import plot_histogram
 from timeit import default_timer as timer
 from copy import copy, deepcopy
 
-from fs_layerview import LayerViewPass
-from fs_exec import _pad_circuit_to_fit, draw
+from fs_foresight import *
 from fs_util import *
-from fs_noise import * 
-from fs_benchmark_pass import BenchmarkPass
+
+import mqt.qmap
 
 import pandas as pd
 import pickle as pkl
@@ -26,201 +25,395 @@ import numpy as np
 
 from sys import argv
 from collections import defaultdict
-from os import listdir
-from os.path import isfile, join
+
+import os
+import time
 import tracemalloc
 import traceback
-import pickle as pkl
-    
-def benchmark(coupling_map, arch_file, dataset='medium', out_file='qasmbench.csv', runs=5, **kwargs):
-    basis_pass = Unroller(G_QISKIT_GATE_SET)
+import pickle
 
-    data = defaultdict(list)
-    if kwargs['noisy']:
-        compare = ['sabre', 'foresight']
-    elif dataset == 'zulehner' or dataset == 'zulehner_partial':
-        compare = ['sabre', 'foresight','foresight_hybrid', 'a*']
-    else:
-        compare = ['sabre', 'foresight','foresight_hybrid','a*']
-    benchmark_pass = BenchmarkPass(coupling_map, arch_file, runs=runs, compare=compare, compute_stats=False, **kwargs)
-    benchmark_pm = PassManager([
-        basis_pass, 
-        benchmark_pass
-    ]) 
-    filter_pass = PassManager([
-        basis_pass,
+BENCHMARK_PATH = '../benchmarks'
+RUNS=5
+    
+def qiskitopt3_layout_pass(coupling_map, routing_pass=None):
+    _unroll3q = [
+        UnitarySynthesis(
+            G_QISKIT_GATE_SET,
+#            approximation_degree=1,
+            min_qubits=3
+        ),
+        Unroll3qOrMore()
+    ]
+
+    _reset = [RemoveResetInZeroState()]
+    _meas = [OptimizeSwapBeforeMeasure(), RemoveDiagonalGatesBeforeMeasure()]
+    _choose_layout_0 = (
         TrivialLayout(coupling_map),
-        ApplyLayout()
-    ])
+        Layout2qDistance(coupling_map, property_name="trivial_layout_score"),
+    )
+    _choose_layout_1 = (
+        CSPLayout(coupling_map, call_limit=10000, time_limit=60)
+    )
+    _choose_layout_2 = SabreLayout(coupling_map, max_iterations=4, routing_pass=routing_pass)
+    _embed = [FullAncillaAllocation(coupling_map), EnlargeWithAncilla(), ApplyLayout()]
+    _swap_check = CheckMap(coupling_map)
+    _unroll = [
+            UnitarySynthesis(
+                G_QISKIT_GATE_SET,
+#                approximation_degree=1,
+                min_qubits=3,
+            ),
+            Unroll3qOrMore(),
+            Collect2qBlocks(),
+            ConsolidateBlocks(basis_gates=G_QISKIT_GATE_SET),
+            UnitarySynthesis(
+                G_QISKIT_GATE_SET,
+#                approximation_degree=1,
+            ),
+        ]
+    # Define layout conditions
+    def _choose_layout_condition(property_set):
+        return not property_set["layout"]
+    def _trivial_not_perfect(property_set):
+        if property_set["trivial_layout_score"] is not None:
+            if property_set["trivial_layout_score"] != 0:
+                return True
+        return False
+    def _csp_not_found_match(property_set):
+        if property_set["layout"] is None:
+            return True
+        if (
+            property_set["CSPLayout_stop_reason"] is not None
+            and property_set["CSPLayout_stop_reason"] != "solution found"
+        ):
+            return True
+        return False
+    # Create pass manager
+    pm = PassManager()
+    pm.append(_unroll3q)
+    pm.append(_reset+_meas)
+    pm.append(_unroll)
+    pm.append(_choose_layout_0, condition=_choose_layout_condition)
+    pm.append(_choose_layout_1, condition=_trivial_not_perfect)
+    pm.append(_choose_layout_2, condition=_csp_not_found_match)
+    pm.append(_embed)
+    pm.append(_swap_check)
+    return pm
 
-    if dataset == 'zulehner':
-        benchmark_folder, benchmark_suite = G_ZULEHNER
-    elif dataset == 'zulehner_partial':
-        benchmark_folder, benchmark_suite = G_ZULEHNER_PARTIAL
-    elif dataset == 'qasmbench_medium':
-        benchmark_suite = G_QASMBENCH_MEDIUM
-    elif dataset == 'qasmbench_large':
-        benchmark_suite = G_QASMBENCH_LARGE
-    elif dataset == 'qaoask':
-        benchmark_folder, benchmark_suite = G_QAOA_SK
-    elif dataset == 'qaoa3rl':
-        benchmark_folder, benchmark_suite = G_QAOA_3RL
-    elif dataset == 'qaoa3rvl':
-        benchmark_folder, benchmark_suite = G_QAOA_3RVL
-    elif dataset == 'bvl':
-        benchmark_folder, benchmark_suite = G_BV_L
-    elif dataset == 'bvvl':
-        benchmark_folder, benchmark_suite = G_BV_VL
-    elif dataset == 'vqebench':
-        benchmark_folder, benchmark_suite = G_VQE
-    elif dataset == 'qaoareal1':
-        benchmark_folder, benchmark_suite = G_QAOA_REAL1
-    elif dataset == 'qaoareal2':
-        benchmark_folder, benchmark_suite = G_QAOA_REAL2
-    elif dataset == 'qaoareal3':
-        benchmark_folder, benchmark_suite = G_QAOA_REAL3
+def generate_benchmarks_for_backend(arch_file, backend_name, 
+        mapped_circ_name=None, routing_pass=None, reset=False
+):
+    if mapped_circ_name is None:
+        mapped_circ_name = 'base_mapping'
+    # load coupling map
+    coupling_map = read_arch_file(arch_file)
+    # clear existing mapped circuits
+    if not os.path.exists('%s/mapped_circuits' % BENCHMARK_PATH):
+        os.mkdir('%s/mapped_circuits' % BENCHMARK_PATH)
+    base_path = '%s/mapped_circuits/%s' % (BENCHMARK_PATH,backend_name)
+    if reset:
+        os.system('rm -rf %s' % base_path)
+        os.mkdir('%s' % base_path)
 
-    used_benchmarks = []
-    sim_counts = {}
-    for qb_file in benchmark_suite:
-        if dataset == 'qasmbench_medium' or dataset == 'qasmbench_large':
-            circ = QuantumCircuit.from_qasm_file('benchmarks/qasmbench/%s/%s/%s.qasm' % (dataset, qb_file, qb_file))    
-        else:
-            circ = QuantumCircuit.from_qasm_file('%s/%s' % (benchmark_folder, qb_file))
-        if circ.depth() > 2500 and dataset == 'zulehner':
+    benchmark_files = [s for s in os.listdir('%s/base' % BENCHMARK_PATH)\
+                            if s.endswith('.qasm')]
+    layout_pass = qiskitopt3_layout_pass(coupling_map)
+    for qasm_file in benchmark_files:
+        print(qasm_file)
+        circ = QuantumCircuit.from_qasm_file('%s/base/%s' % (BENCHMARK_PATH,qasm_file))
+        if circ.num_qubits > coupling_map.size():
             continue
-        used_benchmarks.append(qb_file)
-        print('[%s]' % qb_file)
-        _pad_circuit_to_fit(circ, coupling_map)
-        if not kwargs['sim']:
-            circ.remove_final_measurements()
-        circ = filter_pass.run(circ)
+        if 'cx' in circ.count_ops() and circ.count_ops()['cx'] > 10000:
+            continue
+        mapped_circ = layout_pass.run(circ)
+        if 'cx' in mapped_circ.count_ops() and mapped_circ.count_ops()['cx'] > 10000:
+            continue
+        qasm_name = qasm_file[:qasm_file.index('.qasm')]
+        if not os.path.exists('%s/%s' % (base_path,qasm_file)):
+            os.mkdir('%s/%s' % (base_path,qasm_file))
+        mapped_qasm = mapped_circ.qasm()
+        writer = open('%s/%s/%s.qasm' % (base_path,qasm_file,mapped_circ_name), 'w')
+        writer.write(mapped_qasm)
+        writer.close()
+    print('done')
 
-        benchmark_results = defaultdict(int)
-        benchmark_pm.run(circ)
-        benchmark_results = benchmark_pass.benchmark_results    
-        if benchmark_results['SABRE CNOTs'] == -1:
-            print('\tN/A')
+BVSENS1 = [
+    'bv_n50.qasm'
+]
+
+BVSENS2 = [
+    'bv_n100.qasm',
+    'bv_n200.qasm',
+    'bv_n500.qasm'
+]
+
+GENSENS = [
+    'cm85a_209.qasm',
+    'sqn_258.qasm',
+    'misex1_241.qasm',
+    'hwb5_53.qasm',
+    'rd53_251.qasm',
+    'f2_232.qasm',
+    'sf_276.qasm',
+    'sym9_146.qasm',
+    'mini-alu_167.qasm',
+    'mod10_171.qasm',
+]
+
+NOISEBENCH = [
+    'bv_n14.qasm',
+    'adder_n10.qasm',
+    'seca_n11.qasm',
+    'qf21_n15.qasm',
+    'ba_20_1_1.qasm',
+    'multiply_n13.qasm',
+    'multiplier_n15.qasm',
+    'vqe_n7.qasm'
+]
+
+def generate_sens_benchmarks(sens_folder, circuits, arch_file,
+        mapped_circ_name=None, routing_pass=None, reset=False
+):
+    if mapped_circ_name is None:
+        mapped_circ_name = 'base_mapping'
+    coupling_map = read_arch_file(arch_file)
+
+    base_path = '%s/%s' % (BENCHMARK_PATH, sens_folder)
+    if not os.path.exists(base_path):
+        os.mkdir(base_path)
+    if reset:
+        os.system('rm -rf %s' % base_path)
+        os.mkdir('%s' % base_path)
+    layout_pass = qiskitopt3_layout_pass(coupling_map)
+    for qasm_file in circuits:
+        print(qasm_file)
+        circ = QuantumCircuit.from_qasm_file('%s/base/%s' % (BENCHMARK_PATH, qasm_file)) 
+        mapped_circ = layout_pass.run(circ)
+        if not os.path.exists('%s/%s' % (base_path,qasm_file)):
+            os.mkdir('%s/%s' % (base_path,qasm_file))
+        mapped_qasm = mapped_circ.qasm()
+        writer = open('%s/%s/%s.qasm' % (base_path,qasm_file,mapped_circ_name), 'w')
+        writer.write(mapped_qasm)
+        writer.close()
+
+def benchmark_circuits(folder, arch_file, router_name, routing_func, runs=5):
+    backend = read_arch_file(arch_file)
+    benchmark_folders = [d for d in os.listdir(folder) if os.path.isdir(os.path.join(folder, d))]
+
+    for subfolder in benchmark_folders:
+        print(subfolder)
+        bench_path = os.path.join(folder, subfolder)
+        # Input qasm file
+        file_path = os.path.join(bench_path, 'base_mapping.qasm')
+        # Output qasm file
+        output_path = os.path.join(bench_path, '%s_circ.qasm' % router_name)
+        # Cnot difference, Time, and Memory file
+        data_path = os.path.join(bench_path, '%s_data.txt' % router_name)
+        if os.path.exists(data_path):
+            print('Skipping %s' % subfolder)
+            continue
+        # Declare data structures
+        time_array = []
+        memory_array = []
+        best_circ = None 
+        # Get input circuit
+        base_circ = QuantumCircuit.from_qasm_file(file_path)
+        tracemalloc.start(4)
+        for r in range(runs):
+            circ = base_circ.copy()
+            # Benchmark here
+            tracemalloc.reset_peak()
+            start = time.time()
+            output_circ = routing_func(circ, arch_file)
+            end = time.time()
+            _, peak_mem = tracemalloc.get_traced_memory()
+            # Transpile circuit with O0 to basis gate set.
+            output_circ = transpile(
+                output_circ,
+                coupling_map=backend,
+                basis_gates=G_QISKIT_GATE_SET,
+                layout_method='trivial',
+                routing_method='none',
+                optimization_level=0
+            )
+            if 'cx' not in output_circ.count_ops():
+                cnots = 0
+            else:
+                cnots = output_circ.count_ops()['cx']
+            depth = output_circ.depth()
+            if best_circ is None:
+                best_circ = output_circ
+            else:
+                if 'cx' not in best_circ.count_ops():
+                    min_cnots = 0
+                else:
+                    min_cnots = best_circ.count_ops()['cx']
+                min_depth = best_circ.depth()
+                if cmp(cnots, min_cnots, depth, min_depth):
+                    best_circ = output_circ
+            # Record data
+            time_array.append((end - start) * 1000)  # (end-start) is in seconds -- want in ms
+            memory_array.append(peak_mem)  # peak_mem is in bytes
+        tracemalloc.stop()
+        # Print out data to stdout
+        if 'cx' not in best_circ.count_ops():
+            best_cnots = 0
         else:
-            for x in benchmark_results:
-                print('\t%s: %.3f' % (x, benchmark_results[x]))
-        for x in benchmark_results:
-            data[x].append(benchmark_results[x])
-        if kwargs['sim']:
-            sim_counts['qb_file'] = benchmark_pass.simulation_counts
-    if kwargs['sim']:
-        with open('counts_%s.pkl' % out_file, 'wb') as writer:
-            pkl.dump(sim_counts, writer) 
-    df = pd.DataFrame(data=data, index=used_benchmarks)
-    df.to_csv(out_file)
-    
-if __name__ == '__main__':
-    mode = 'medium'
-    
-    coupling_style = 'tokyo'
-    runs = 1
-    file_out = 'log'
-    
-    benchmark_kwargs = {
-        'sim': True,
-        'debug': False,
-        'noisy': False,
-        'mem': True,
-        'slack': G_FORESIGHT_SLACK,
-        'solncap': G_FORESIGHT_SOLN_CAP,
-        'noise_factor': 1.0
-    }
-    
-    if argv[1] == '-h':  # print out help
-        print('Usage:')
-        print('\t--nosim = do not simulate after routing.')
-        print('\t--debug = print out debug messages.')
-        print('\t--noisy = perform noisy routing (along with simulation if asked) -- only supported for Google Sycamore, Weber Architecture.')
-        print('\t--nomem = do not measure memory usage (decreases time taken).')
-        print('\t--dataset <d> where d is one of')
-        print('\t\tzulehner (circuits used by Zulehner et al. in the A* paper)')
-        print('\t\tzulehner_partial (a small selection of Zulehner et al.\'s circuits)')
-        print('\t\tqasmbench_medium (a subset of the medium circuits from the QASMBENCH suite)')
-        print('\t\tqasmbench_large (a subset of the large circuits from the QASMBENCH suite)')
-        print('\t\tqaoask (Sherrington-Kirkpatrik QAOA circuits)')
-        print('\t\tqaoa3rl (QAOA circuits for 3-regular graphs -- max size is 20 qubits)')
-        print('\t\tqaoa3rvl (QAOA circuits for 3-regular graphs using around 100 qubits)')
-        print('\t\tbvl (Bernstein-Vazirani circuits up to 50 qubits)')
-        print('\t\tbvvl (Bernstein-Vazirani circuits up to 500 qubits)')
-        print('\t\tvqebench (VQE Benchmarks from 4 to 8 qubits)')
-        print('\t--runs <r> where r is the number of trials for each circuit')
-        print('\t--coupling <backend> where backend is one of')
-        print('\t\ttoronto (IBMQ Toronto -- 27 qubits)')
-        print('\t\tweber (Google Sycamore, Weber Architecture -- 50 qubits)')
-        print('\t\taspen9 (Rigetti Aspen9 -- 30 qubits)')
-        print('\t\ttokyo (IBMQ Tokyo -- 20 qubits)')
-        print('\t\t100grid (Grid of 100 qubits)')
-        print('\t\t500grid (Grid of 500 qubits)')
-        print('\t\t3heavyhex (IBM\'s presented sub-architecture for their Eagle QPU)')
-        print('\t--output-file <file> where file is the name of the result file.')
-        print('\t--slack <s> where s is the slack parameter used in ForeSight path identification.')
-        print('\t--solncap <s> where s is the computation tree limit.')
-        print('\t--noise-scale <f> where f is a factor by which to multiply noise effects.')
-        exit()
+            best_cnots = best_circ.count_ops()['cx']
+        if 'cx' not in base_circ.count_ops():
+            base_cnots = 0
+        else:
+            base_cnots = base_circ.count_ops()['cx']
+        print('\tcnot difference: %d' % (best_cnots - base_cnots))
+        print('\tdepth: %d' % best_circ.depth())
+        print('\tmean time: %.3f' % np.mean(time_array))
+        print('\tmean memory: %.3f' % np.mean(memory_array))
+        # Record best circ in qasm file
+        writer = open(output_path, 'w')
+        writer.write(best_circ.qasm())
+        writer.close()
+        # Record data in data path
+        writer = open(data_path, 'w')
+        writer.write('cnots\t%d\n' % best_cnots)
+        writer.write('depth\t%d\n' % best_circ.depth())
+        writer.write('time\t%.3f\n' % np.mean(time_array))
+        writer.write('memory\t%.3f\n' % np.mean(memory_array))
+        writer.close()
 
-    i = 1
-    while i < len(argv):
-        arg = argv[i]
-        if arg == '--nosim':
-            benchmark_kwargs['sim'] = False
-        elif arg == '--debug':
-            benchmark_kwargs['debug'] = True
-        elif arg == '--noisy':
-            benchmark_kwargs['noisy'] = True
-        elif arg == '--nomem':
-            benchmark_kwargs['mem'] = False
-        elif arg == '--dataset':
-            mode = argv[i+1]
-            i += 1
-        elif arg == '--runs':
-            runs = int(argv[i+1])  # get next argument
-            i += 1
-        elif arg == '--coupling':
-            coupling_style = argv[i+1]
-            i += 1
-        elif arg == '--output-file':
-            file_out = argv[i+1]
-            i += 1 
-        elif arg == '--slack':
-            benchmark_kwargs['slack'] = float(argv[i+1])
-            i += 1
-        elif arg == '--solncap':
-            benchmark_kwargs['solncap'] = int(argv[i+1])
-        elif arg == '--noise-scale':
-            benchmark_kwargs['noise_factor'] = float(argv[i+1])
-            i += 1
-        i += 1
-    print('Config:\n\tdataset: %s\n\tcoupling style: %s\n\truns: %d\n\toutput-file: %s'
-            % (mode, coupling_style, runs, file_out))
-    for x in benchmark_kwargs:
-        print('\t%s: %s' % (x, str(benchmark_kwargs[x])))
+def build_csv_file(folder, arch_file, output_file):
+    benchmark_folder = [d for d in os.listdir(folder) if os.path.isdir(os.path.join(folder, d))]
+    data = defaultdict(list)
+    base_columns = ['cnots added', 'depth', 'time', 'memory', 'cnots added O3', 'depth O3']
+    columns = []
+    compilers = ['sabre', 'fsalap', 'astar']
+    for cat in compilers:
+        for b in base_columns:
+            columns.append('%s %s' % (cat, b))
+    columns.insert(0, 'original cnots')
+    backend = read_arch_file(arch_file)
+    for (i,subfolder) in enumerate(benchmark_folder):
+        print(subfolder)
+        bench_path = os.path.join(folder, subfolder)
+        base_circ = QuantumCircuit.from_qasm_file(os.path.join(bench_path, 'base_mapping.qasm'))
+        if 'cx' not in base_circ.count_ops():
+            base_cnots = 0
+        else:
+            base_cnots = base_circ.count_ops()['cx']
+        data['original cnots'].append(base_cnots)
+        for cat in compilers:
+            print('\treading %s' % cat)
+            data_file = os.path.join(bench_path, '%s_data.txt' % cat)
+            reader = open(data_file, 'r')
+            line = reader.readline()
+            while line != '':
+                print('\t\t%s' % line.strip())
+                line_data = line.split('\t')
+                dtype = line_data[0]
+                if dtype == 'cnots' or dtype == 'depth':
+                    value = int(line_data[1])
+                else:
+                    value = float(line_data[1])
+                if dtype == 'cnots':
+                    data['%s cnots added' % cat].append(value - base_cnots)
+                else:
+                    data['%s %s' % (cat, dtype)].append(value)
+                line = reader.readline()
+            reader.close()
+            print('\tperforming O3 on %s' % cat)
+            original_circ = QuantumCircuit.from_qasm_file(
+                        os.path.join(bench_path, '%s_circ.qasm' % cat))
+            try:
+                trans_circ = transpile(
+                    original_circ,
+                    basis_gates=G_QISKIT_GATE_SET,
+                    coupling_map=backend,
+                    layout_method='trivial',
+                    routing_method='none',
+                    optimization_level=3
+                )
+            except:
+                trans_circ = original_circ
+            if 'cx' not in trans_circ.count_ops():
+                tc_cnots = 0
+            else:
+                tc_cnots = trans_circ.count_ops()['cx']
+            tc_depth = trans_circ.depth()
+            data['%s cnots added O3' % cat].append(tc_cnots-base_cnots)
+            data['%s depth O3' % cat].append(tc_depth)
+            print('\transpiled cnots = %d, depth = %d' % (tc_cnots-base_cnots, tc_depth))
+    df = pd.DataFrame(data=data, index=benchmark_folder)
+    df.to_csv(output_file)
 
-    if coupling_style == 'toronto':
-        coupling_map = G_IBM_TORONTO 
-        arch_file = 'arch/ibm_toronto.arch'  # For use with QMAP (Zulehner et al.)
-    elif coupling_style == 'weber':
-        coupling_map = G_GOOGLE_WEBER
-        arch_file = 'arch/google_weber.arch'
-        if benchmark_kwargs['noisy']:
-            benchmark_kwargs['noise_model'] = google_weber_noise_model(benchmark_kwargs['noise_factor'])
-    elif coupling_style == 'aspen9':
-        coupling_map = G_RIGETTI_ASPEN9
-        arch_file = 'arch/rigetti_aspen9.arch'
-    elif coupling_style == 'tokyo':
-        coupling_map = G_IBM_TOKYO
-        arch_file = 'arch/ibm_tokyo.arch'
-    elif coupling_style == '100grid':
-        coupling_map = G_100GRID
-        arch_file = 'arch/100grid.arch'
-    elif coupling_style == '3heavyhex':
-        coupling_map = G_IBM_3HEAVYHEX
-        arch_file = 'arch/ibm_3heavyhex.arch'
-    elif coupling_style == '500grid':
-        coupling_map = G_500GRID
-        arch_file = 'arch/500grid.arch'
-    benchmark(coupling_map, arch_file, dataset=mode, runs=runs, out_file=file_out, **benchmark_kwargs)
+def _sabre_route(circ, arch_file):
+    backend = read_arch_file(arch_file)
+    compiler = SabreSwap(backend, heuristic='decay')
+    sabre_pass = PassManager([
+        TrivialLayout(backend),
+        ApplyLayout(),
+        compiler
+    ])
+    return sabre_pass.run(circ)
+
+FORESIGHT_DEFAULT_FLAGS = FLAG_ALAP
+def _foresight_route(circ, arch_file, flags=FORESIGHT_DEFAULT_FLAGS):
+    backend = read_arch_file(arch_file)
+    compiler = ForeSight(backend, slack=2, solution_cap=64, flags=flags) 
+    foresight_pass = PassManager([
+        TrivialLayout(backend),
+        ApplyLayout(),
+        compiler
+    ])
+    return foresight_pass.run(circ)
+
+def _astar_route(circ, arch_file):
+    circ = RemoveBarriers()(circ)
+    circ = RemoveFinalMeasurements()(circ)
+    output_circ = QuantumCircuit(1,1)
+    try:
+        results = mqt.qmap.compile(
+                circ, arch_file, method='heuristic', initial_layout='identity')
+        results = results.json()
+        output_circ = QuantumCircuit.from_qasm_str(results['mapped_circuit']['qasm'])
+    except Exception as e:
+        print(e)
+    return output_circ
+
+from pytket import Circuit as TketCircuit
+from pytket import OpType
+from pytket.circuit import Qubit as TketQubit
+from pytket.circuit import Node as TketNode
+from pytket.qasm import circuit_from_qasm_str, circuit_to_qasm_str
+from pytket.architecture import Architecture
+from pytket.placement import Placement
+from pytket.transform import CXConfigType
+import pytket.passes
+
+def _tket_route(circ, arch_file):
+    qasm = circ.qasm()
+    tket_circ = circuit_from_qasm_str(qasm)
+    backend = Architecture(read_arch_file(arch_file).get_edges())
+    # Perform Peephole Optimization
+    tket_basis_1q = {OpType.Rx, OpType.Ry, OpType.Rz}
+    tket_basis_2q = {OpType.CX}
+    trivial_mapping = {TketQubit(i):TketNode(i) for i in range(tket_circ.n_qubits)}
+    # Create basis synthesis circuits
+    cx_to_cx = TketCircuit(2)
+    cx_to_cx.CX(0,1)
+    def tk1_to_sq(x,y,z):
+        tmp = TketCircuit(1)
+        tmp.Rx(x,0).Ry(y,0).Rz(z,0)
+        return tmp
+    # Perform other optimizations.
+    pytket.passes.DecomposeBoxes().apply(tket_circ)
+    pytket.passes.FullPeepholeOptimise().apply(tket_circ)
+    #pytket.passes.RebaseCustom(tket_basis_2q, cx_to_cx, tk1_to_sq).apply(tket_circ)
+    placement = Placement(backend)
+    placement.place_with_map(tket_circ, trivial_mapping)
+    pytket.passes.RoutingPass(backend).apply(tket_circ)
+    try:
+        pytket.passes.DelayMeasures().apply(tket_circ)
+        pytket.passes.CXMappingPass(backend, placement).apply(tket_circ)
+    except:
+        pass
+    return QuantumCircuit.from_qasm_str(circuit_to_qasm_str(tket_circ))
+

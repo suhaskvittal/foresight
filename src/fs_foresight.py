@@ -5,34 +5,48 @@
 
 from qiskit.circuit import Qubit
 
+from qiskit.compiler import transpile
+from qiskit.converters import dag_to_circuit, circuit_to_dag
 from qiskit.transpiler.basepasses import TransformationPass
 from qiskit.transpiler.passes import *
 from qiskit.transpiler.layout import Layout
 from qiskit.dagcircuit import DAGOpNode
 from qiskit.circuit.library import CXGate, SwapGate, Measure
 
-from fs_layerview import LayerViewPass
-from fs_selector import ForeSightSelector
-from fs_sum_tree import SumTreeNode, MinLeafPackage
-from fs_dist import process_coupling_map
-from fs_multipath import ComputationKernel, DeepSolveSolution, ShallowSolveSolution
+from fs_util import *
+from fs_util import _path_to_swap_collection
+
+from foresight.fs_dist import process_coupling_map
+from foresight.fs_multipath import SolutionKernel
+from foresight.fs_path_join_tree import PathJoinTree
+from foresight.fs_path_priority_queue import PathPriorityQueue
+from foresight.fs_hashed_layout import HashedLayout
 
 import numpy as np
 
 from copy import copy, deepcopy
 from collections import deque, defaultdict
 
+FLAG_DEBUG = 0x1
+FLAG_ALAP = 0x2
+FLAG_ASAP = 0x4
+FLAG_NOISE_AWARE = 0x8
+FLAG_OPT_FOR_O3 = 0x10
+
+DEFAULT_FLAGS = FLAG_ALAP
+
+def cmp(score1, score2, size1, size2):  # Returns true if 1 < 2
+    return (score1 < score2) or (score1 == score2 and size1 < size2)
+
 class ForeSight(TransformationPass):
     def __init__(self,
         coupling_map, 
         slack=2,
         solution_cap=32,
-        asap_boost=False,
-        approx_asap=False,
-        edge_weights=None,
-        vertex_weights=None,
-        readout_weights=None,
-        debug=False
+        cx_error_rates=None,
+        sq_error_rates=None,
+        ro_error_rates=None,
+        flags=DEFAULT_FLAGS
     ):
         """
         Initializes ForeSight pass.
@@ -43,10 +57,6 @@ class ForeSight(TransformationPass):
             considered. (etc.)
         solution_cap: caps size of the computation tree. Tree is contracted
             if treewidth exceeds 2*solution_cap.
-        edge_weights: weights for noisy computation.
-            vertex_weights: weights for noisy computation. (UNUSED)
-            readout_weights: weights for noisy computation. (UNUSED)
-            debug: output debug messages 
         """
         super().__init__()
 
@@ -57,23 +67,32 @@ class ForeSight(TransformationPass):
         self.distance_matrix, self.paths_on_arch = process_coupling_map(
             coupling_map,
             slack,
-            edge_weights=edge_weights,
+            edge_weights=cx_error_rates,
         ) 
         self.mean_degree = len(self.coupling_map.get_edges()) / self.coupling_map.size()
-        self.use_asap_boost = asap_boost
-        self.approx_asap = approx_asap
+
+        # Runtime data structures
+        self.input_dag = None
+        self.canonical_register = None
+        self.solutions = []
 
         # Other
         self.fake_run = False
-        self.debug = debug
+        self.debug = flags & FLAG_DEBUG
+        self.alap_enabled = flags & FLAG_ALAP
+        self.asap_enabled = flags & FLAG_ASAP
+        self.noise_aware = flags & FLAG_NOISE_AWARE
+        self.using_o3 = flags & FLAG_OPT_FOR_O3
 
         # initialize weights
-        self.edge_weights = edge_weights
-        self.vertex_weights = vertex_weights
-        self.readout_weights = readout_weights
+        self.cx_error_rates = cx_error_rates
+        self.sq_error_rates = sq_error_rates
+        self.ro_error_rates = ro_error_rates
 
         # usage statistics
         self.suggestions = 0
+        self.iterations = 0
+        self.prunings = 0
         self.swap_segments = []
             
     def run(self, dag):
@@ -90,612 +109,494 @@ class ForeSight(TransformationPass):
                 (4) We then finally route based on the proposed
                     solution and return the result.
             ForeSight also verifies the result during execution
-                (1) If this is normal ForeSight (no ASAP boost),
-                    then, we verify in two places.
-                        (a) Shallow Solve -- we verify that all
-                            2-qubit operations in the layer have
-                            adjacent operands.
-                        (b) In this method -- we verify that all
-                            operations in the original dag have
-                            been placed.
-                (2) If this is ASAP boosted ForeSight, then we
-                    verify that all operations in the original
-                    dag have been placed and verify that all
-                    2-qubit operations are valid in this method.
-                    For checking that all 2-qubit operations are
-                    valid, we run SABRE to check if any new SWAPs
-                    are added. If no such SWAPs are found, then 
-                    all operands of 2-qubit operations are adjacent.
+                We verify in two places.
+                    (a) Shallow Solve -- we verify that all
+                        2-qubit operations in the layer have
+                        adjacent operands.
+                    (b) In this method -- we verify that all
+                        operations in the original dag have
+                        been placed.
         """
         mapped_dag = dag._copy_circuit_metadata()
-        canonical_register = dag.qregs["q"]
-        current_layout = Layout.generate_trivial_layout(canonical_register)
-        
-        primary_layer_view, secondary_layer_view =\
-            self.property_set['primary_layer_view'], self.property_set['secondary_layer_view']
-        if primary_layer_view is None or secondary_layer_view is None:
-            layer_view_pass = LayerViewPass();
-            layer_view_pass.run(dag)
-            primary_layer_view, secondary_layer_view =\
-                layer_view_pass.property_set['primary_layer_view'], layer_view_pass.property_set['secondary_layer_view']
-        # Convert to deque's for lower latency
-        primary_layer_view = deque(primary_layer_view)
-        secondary_layer_view = deque(secondary_layer_view)
 
-        # Run deep solve
-        solutions = self.deep_solve(
-            dag,
-            primary_layer_view, 
-            secondary_layer_view, 
-            [DeepSolveSolution([], current_layout, 0, set())],
-            canonical_register 
+        # Initialize global data structures
+        self.input_dag = dag
+        self.canonical_register = dag.qregs["q"]
+        # Compute initial data structures
+        front_layer = []
+        initial_pred_table = defaultdict(int)
+        initial_layout = Layout.generate_trivial_layout(self.canonical_register)
+        for (_, input_node) in dag.input_map.items():
+            for s in self._successors(input_node):
+                initial_pred_table[s] += 1
+                if initial_pred_table[s] == len(s.qargs):
+                    front_layer.append(s)
+        completed_nodes = set()
+        next_layer = self.compute_next_layer(front_layer, initial_pred_table, completed_nodes) 
+        init_kernel = SolutionKernel(
+            front_layer,
+            next_layer,
+            initial_pred_table,
+            completed_nodes,
+            deque([]),          # Schedule
+            initial_layout, 
+            0,                  # Swap count
+            1.0,                # Expected prob success
+            None,               # Parent solution kernel
+            {},                 # Last cnot table
         )
+        self.solutions = [init_kernel]
+        # Start execution
+        completed_solutions = []
+        cycle = 0
+        prunings = 0
+        while len(self.solutions) > 0:
+            next_solutions = []
+            if self.debug and cycle % 50 == 0:
+                print('suggestions:', self.suggestions)
+                print('number of solutions:', len(self.solutions))
+                print('number of completed solutions', len(completed_solutions))
+            for i in range(len(self.solutions)):
+                kernel = self.solutions[i]
+                if self.debug and cycle % 50 == 0 and i == 0:
+                    print('kernel %d' % i)
+                    print('\tswaps used', kernel.swap_count)
+                    print('\tgates completed:', len(kernel.completed_nodes))
+                    print('\tfront layer:')
+                    for node in kernel.front_layer:
+                        print('\t\t%s' % node.name, end=' ')
+                        for q in node.qargs:
+                            print('%d(%d)' % (q.index, kernel.layout[q]), end=' ')
+                        print('\n', end='')
+                if len(kernel.front_layer) == 0:
+                    curr = kernel.parent
+                    while curr is not None:
+                        i = len(curr.schedule)-1
+                        while i >= 0:
+                            kernel.schedule.appendleft(curr.schedule[i])
+                            i -= 1
+                        curr = curr.parent
+                    kernel.parent = None
+                    completed_solutions.append(kernel)
+                    continue
+                children = self.explore_kernel(kernel)
+                next_solutions.extend(children)
+            self.solutions = next_solutions
+            if len(self.solutions) > self.solution_cap:
+                self.solutions = self.contract_solutions(self.solutions)
+                prunings += 1
+            cycle += 1
+        self.iterations = cycle
+        self.prunings = prunings
 
-        # Choose solution with minimum depth.
-        min_solution = None
-        min_layout = None
-        min_size = -1
-        min_depth = -1
-        min_segments = None
-        for deep_solve_soln in solutions:
-            layout, soln, size =\
-                deep_solve_soln.layout, deep_solve_soln.output_layers, deep_solve_soln.layer_sum
-            depth = len(soln)
-            if min_solution is None or (size < min_size) or (size == min_size and depth < min_depth):
-                min_layout = layout
-                min_solution = soln
-                min_size = size
-                min_depth = depth
-                min_segments = deep_solve_soln.swap_segments
-        self.swap_segments = min_segments
-        self.property_set['final_layout'] = min_layout
-
-        if self.fake_run:
-            return mapped_dag   
-        # Else build the dag.
-        for layer in min_solution:
-            for node in layer:
-                mapped_dag.apply_operation_back(op=node.op, qargs=node.qargs, cargs=node.cargs)
-        # Validate mapped dag (SWAPs already validated -- ops are valid, just check if all ops are there)
-        orig_ops = dag.count_ops()
-        mapped_ops = mapped_dag.count_ops()
-        # Self-verify that no operations have been skipped.
-        for g in orig_ops:
-            if orig_ops[g] != mapped_ops[g]:
-                print('Error! Unequal non-SWAP gates after routing.')
-                print('Original circuit: ', orig_ops)
-                print('Mapped circuit: ', mapped_ops)
-                break
+        completed_solutions = self.contract_solutions(completed_solutions)
+        # Choose solution with minimum swaps.
+        if self.using_o3:
+            mapped_dag = None
+            # Run O3 on all completed solutions, choose the one with the minimum cnot count. 
+            for (i, kernel) in enumerate(completed_solutions): 
+                test_dag = dag._copy_circuit_metadata()
+                for layer in kernel.schedule:
+                    for node in layer:
+                        test_dag.apply_operation_back(
+                                op=node.op, qargs=node.qargs, cargs=node.cargs)
+                # Validate test dag.
+                orig_ops = dag.count_ops()
+                mapped_ops = test_dag.count_ops()
+                # Self-verify that no operations have been skipped.
+                error_found = False
+                for g in orig_ops:
+                    if g not in mapped_ops or orig_ops[g] != mapped_ops[g]:
+                        print('Error! Unequal non-SWAP gates after routing.')
+                        print('\tOriginal circuit: ', orig_ops)
+                        print('\tMapped circuit: ', mapped_ops)
+                        error_found = True
+                        break
+                if error_found:
+                    continue
+                # Apply Qiskit O3 to the test dag
+                test_circ = dag_to_circuit(test_dag)
+                test_circ = transpile(
+                    test_circ,
+                    coupling_map=self.coupling_map,
+                    basis_gates=G_QISKIT_GATE_SET,
+                    layout_method='trivial',
+                    routing_method='none',
+                    optimization_level=3
+                )
+                test_dag = circuit_to_dag(test_circ)
+                cnots = test_dag.count_ops()['cx']
+                depth = test_dag.depth()
+                if self.debug:
+                    print('kernel %d of %d has %d cnots and %d depth (originally %d swaps)'\
+                            % (i, len(completed_solutions), cnots, depth, kernel.swap_count)) 
+                if mapped_dag is None:
+                    mapped_dag = test_dag
+                else:
+                    min_cnots = mapped_dag.count_ops()['cx']
+                    min_depth = mapped_dag.depth()
+                    if cmp(cnots, min_cnots, depth, min_depth):
+                        mapped_dag = test_dag
+        else:
+            best_solution = min(completed_solutions, key=lambda x: x.swap_count)
+            self.property_set['final_layout'] = best_solution.layout
+            if self.fake_run:
+                return mapped_dag   
+            # Else build the dag.
+            for layer in best_solution.schedule:
+                for node in layer:
+                    mapped_dag.apply_operation_back(op=node.op, qargs=node.qargs, cargs=node.cargs)
+            # Validate mapped dag
+            # SWAPs already validated -- ops are valid, just check if all ops are there
+            orig_ops = dag.count_ops()
+            mapped_ops = mapped_dag.count_ops()
+            # Self-verify that no operations have been skipped.
+            for g in orig_ops:
+                if g not in mapped_ops or orig_ops[g] != mapped_ops[g]:
+                    print('Error! Unequal non-SWAP gates after routing.')
+                    print('\tOriginal circuit: ', orig_ops)
+                    print('\tMapped circuit: ', mapped_ops)
+                    break
         if self.debug:
             print('Statistics')
             print('\tSuggestion usage:', self.suggestions)
-        if self.use_asap_boost:  # ASAP boosted routing is hard to verify, so do so here.
-            # If SABRE adds swaps to our output dag, then we know we have mis-routed.
-            remapped_dag = SabreSwap(self.coupling_map).run(mapped_dag)
-            remapped_ops = remapped_dag.count_ops()
-            if remapped_ops['swap'] != mapped_ops['swap']:
-                print('Error! Remapped dag contains extra SWAPs.')
-                print('Mapped circuit: ', mapped_dag['swap'])
-                print('Remapped circuit: ', remapped_dag['swap'])
+            print('\tPrunings to total iterations: %d to %d' % (self.prunings, self.iterations))
         return mapped_dag
-    
-    def deep_solve(
-        self, 
-        dag,
-        primary_layer_view, 
-        secondary_layer_view, 
-        base_solver_queue, 
-        canonical_register 
-    ):
-        """
-            Deep solve portion. Maintains the computation tree. Deep
-            solve maintains a list of ComputationKernels in its
-            solver queue (each represent a potential solution). Once
-            the queue of computation kernels grows to large, Deep Solve
-            traverse upwards to the original computation kernel and 
-            collapse all the data down to the current kernels (contracting
-            the computation tree). Once this finishes, deep solve will
-            call itself to restart the process with the remaining
-            computation kernels as the new original kernels.
 
-            This process can be represented as a tree, where each
-            computation kernel is a node in the tree. Then, the entire
-            process of contracting the tree traverses up to the root and
-            "flattens" the tree to the kernels at the leaves.
+    def contract_solutions(self, solutions, prune_cap=None):
+        layout_table = {}
+        for kernel in solutions:
+            layout = kernel.layout
+            hashed_layout = HashedLayout.from_layout(layout)
 
-            Each solution from deep solve contains
-                (1) A list of operations in a BFS-like list.
-                (2) The number of SWAPs in the list.
-                (3) A current layout.
-                (4) The completed nodes set.
-            This is identical to a ShallowSolveSolution, but we use a 
-            different name to differentiate the usage of both solutions.
-
-            dag: the base circuit's dag representation.
-            primary_layer_view: a BFS view of all 2-qubit operations
-            secondary_layer_view: a BFS view of all other operations
-            base_solver_queue: holds current solutions for routing
-            canonical_register: necessary for routing correctly
-
-            Returns: a list of DeepSolveSolutions.
-        """
-        if len(primary_layer_view) == 0:
-            return base_solver_queue
-
-        # Build tree of output layers.
-        solver_queue = []
-        leaves = []
-        for (i, deep_solve_soln) in enumerate(base_solver_queue):
-            root_node = SumTreeNode(
-                deep_solve_soln.output_layers,
-                deep_solve_soln.layer_sum,
-                None,
-                [],
-                swap_segments=deep_solve_soln.swap_segments
-            )  
-            leaves.append(root_node)
-            # Each solution instance is a "computation kernel".
-            # We perform deep solve on a tree of kernels by performing
-            # shallow solve until some critical point.
-            solver_queue.append(ComputationKernel(
-                deep_solve_soln.layout,
-                i,
-                deep_solve_soln.completed_nodes,
-                kernel_type='alap'
-            ))
-            if self.use_asap_boost:
-                solver_queue.append(ComputationKernel(
-                    deep_solve_soln.layout,
-                    i,
-                    deep_solve_soln.completed_nodes,
-                    kernel_type='asap'
-                ))
-        while len(solver_queue) <= 2*self.solution_cap:
-            if len(primary_layer_view) == 0:
-                break
-            next_solver_queue = []
-            next_leaves = []
-            for compkern in solver_queue:  # Empty out queue into next_solver_queue.
-                parent = leaves[compkern.parent_id]
-                if compkern.type == 'asap':
-                    solutions = self.asap_burst_solve(
-                        dag,
-                        primary_layer_view,
-                        secondary_layer_view,
-                        compkern.layout,
-                        canonical_register,
-                        compkern.completed_nodes
-                    )
-                else:
-                    solutions = self.shallow_solve(
-                        dag,
-                        primary_layer_view,
-                        secondary_layer_view,
-                        compkern.layout,
-                        canonical_register,
-                        compkern.completed_nodes
-                    )
-                # Apply solutions non-deterministically to current_dag.
-                for (i, shallow_solve_soln) in enumerate(solutions):
-                    # Create node for each candidate solution.
-                    node = SumTreeNode(
-                        shallow_solve_soln.output_layers,
-                        parent.sum_data + shallow_solve_soln.num_swaps,
-                        parent,
-                        [],
-                        swap_segments=[shallow_solve_soln.num_swaps]
-                    )
-                    parent.children.append(node)
-                    next_leaves.append(node)
-                    # Create a child kernel
-                    for kernel_type in ['asap','alap']:
-                        if kernel_type == 'asap' and not self.use_asap_boost:
-                            continue
-                        #if self.approx_asap and compkern.type != kernel_type and np.random.random() < 0.25:
-                            continue
-                        if kernel_type != 'alap' and shallow_solve_soln.num_swaps == 0:
-                            continue
-                        next_solver_queue.append(ComputationKernel(
-                            shallow_solve_soln.layout,
-                            len(next_leaves) - 1,
-                            shallow_solve_soln.completed_nodes
-                        ))
-            solver_queue = next_solver_queue
-            leaves = next_leaves
-            # Remove top layer
-            primary_layer_view.popleft()
-            secondary_layer_view.popleft()
-        # The critical point has been reached -- we contract the computation tree.
-        # Now, we simply check the leaves of the output layer tree. We select the leaf with the minimum sum.
-        min_leaves = []
-        min_sum = -1
-        for (i, leaf) in enumerate(leaves):
-            shallow_solve_soln  = solver_queue[i]
-            if min_sum < 0 or leaf.sum_data < min_sum:
-                min_leaves = [MinLeafPackage(
-                    leaf,
-                    leaf.sum_data,
-                    shallow_solve_soln.layout,
-                    shallow_solve_soln.completed_nodes
-                )] 
-                min_sum = leaf.sum_data
-            elif leaf.sum_data == min_sum:
-                min_leaves.append(MinLeafPackage(
-                    leaf,
-                    leaf.sum_data,
-                    shallow_solve_soln.layout,
-                    shallow_solve_soln.completed_nodes
-                )) 
-        # If we have too many minleaves, then randomly choose a subset of them.
-        if len(min_leaves) > self.solution_cap:
-            min_leaf_indices = np.random.choice(np.arange(len(min_leaves)), size=self.solution_cap)
-            min_leaves = [min_leaves[i] for i in min_leaf_indices]
-        # Now that we know the best leaves, we simply just need to build the corresponding dags.
-        # Traverse up the leaves -- there is only one path to a root.
-        min_solutions = []
-        for min_leaf in min_leaves:
-            output_layer_deque = deque([])
-            curr = min_leaf.leaf_node
-            swap_segments = []  # build swap segments from the tree
-            while curr != None:
-                output_layer_deque.extendleft(list(curr.obj_data)[::-1])
-                if len(curr.swap_segments) > 0 and curr.swap_segments[0] != 0:
-                    swap_segments.extend(curr.swap_segments)
-                curr = curr.parent
-            # Package the solution as a DeepSolveSolution
-            min_solutions.append(DeepSolveSolution(
-                output_layer_deque,
-                min_leaf.layout,
-                min_leaf.leaf_sum,
-                min_leaf.completed_nodes,
-                swap_segments=swap_segments[::-1]  # it is backwards because we went from leaf to root
-            ))
-        return self.deep_solve(dag, primary_layer_view, secondary_layer_view, min_solutions, canonical_register)
-                
-    def shallow_solve(
-        self, 
-        dag,
-        primary_layer_view,
-        secondary_layer_view,
-        current_layout,
-        canonical_register,
-        completed_nodes
-    ):
-        """
-            Performs actual routing and node marking.
-
-            Shallow solve first identifies unsatisfied 2-qubit
-            operations in the layer and then tries to find SWAPs
-            that minimize depth and size. If there isn't a solution
-            that satisfies all unsatisfied 2-qubit operations, then
-            shallow solve splits up the layer into multiple layers
-            depending on analysis of the concurrent satisfiability 
-            (this is called "suggestion"). Then, it will run greedily
-            on these layers and stitch their results together. 
-
-            Regardless of whether the suggestion phase occurs or not,
-            shallow solve will return a list of ShallowSolveSolutions
-            that represent routing solutions to the topmost layer. Each
-            solution contains
-                (1) A list of operations in a BFS-like list.
-                (2) The number of SWAPs in the list.
-                (3) A new layout.
-                (4) A completed set.
-
-            primary_layer_view: BFS view of 2-qubit operations.
-            secondary_layer_view: BFS view of other operations.
-            current_layout: current running layout
-            canonical_register: necessary for routing correctly
-            completed_nodes: a set of nodes that have already been routed
-
-            Returns: a list of ShallowSolveSolutions that route the current
-                layer given the completed_nodes set.
-        """
-        # Initialize all structures
-        output_layers = [[]]
-        
-        target_list = []
-        path_collection_list = []
-        post_nodes = []
-        target_to_node = {}
-
-        # Copy the set of completed nodes
-        # as the set will be used across multiple
-        # computation kernels.
-        completed_nodes = copy(completed_nodes)
-
-        # Only execute operations in current layer.
-        # Define post primary layer view
-        post_primary_layer_view = self.compute_post_primary(
-            primary_layer_view, 
-            completed_nodes
-        )
-    
-        # Process operations in layer
-        for node in secondary_layer_view[0]:
-            if node in completed_nodes:
-                continue
-            output_layers[0].append(self._remap_gate_for_layout(node, current_layout, canonical_register))
-            completed_nodes.add(node)  # preemptively add the node -- we will place it anyways.
-        front_layer = primary_layer_view[0]
-        for node in front_layer:  
-            if node in completed_nodes:
-                continue
-            q0, q1 = node.qargs
-            # Filter out all operations that are currently adjacent.
-            if self.coupling_map.graph.has_edge(current_layout[q0], current_layout[q1]):
-                output_layers[0].append(self._remap_gate_for_layout(node, current_layout, canonical_register))
-                completed_nodes.add(node)
-            else:  # Otherwise, get path candidates and place it in path_collection_list.
-                path_collection_list.append(self.path_find_and_fold(q0, q1, post_primary_layer_view, current_layout))
-                post_nodes.append(node)
-                target_list.append((q0, q1))
-                target_to_node[(q0, q1)] = node
-        # Build PPC and get candidate list.
-        if len(path_collection_list) == 0:
-            return [ShallowSolveSolution(output_layers, current_layout, 0, completed_nodes)]
-        # This part is pretty much described as "magic" in the paper.
-        # This step is heavily rooted in theory for its correctness, so we excluded the
-        # explanation.
-        path_selector = ForeSightSelector(path_collection_list, len(path_collection_list))
-        candidate_list, suggestions = path_selector.find_and_join(self, target_list, current_layout, post_primary_layer_view)
-        if candidate_list is None:  # We failed, take the suggestions.
-            self.suggestions += 1
-            tmp_pl_view = deepcopy(primary_layer_view)
-            tmp_sl_view = deepcopy(secondary_layer_view)
-            # Remove top layer from both views.
-            tmp_pl_view.popleft()
-            tmp_sl_view.popleft()
-            # Idea: run shallow solve on suggestions, perform cross product on results.
-            target_lists = []
-            for index_list in suggestions:
-                if len(index_list) == 0:
-                    continue
-                target_sub_list = [target_list[i] for i in index_list]
-                target_lists.append(target_sub_list)
-                tmp_pl_view.appendleft([target_to_node[target] for target in target_sub_list])
-                tmp_sl_view.appendleft([])
-            solutions = [ShallowSolveSolution(output_layers, current_layout, 0, completed_nodes)]
-            while target_lists:
-                target_sub_list = target_lists.pop()
-                next_solutions = []
-                for prev_soln in solutions:
-                    solution_list = self.shallow_solve(
-                        dag,
-                        tmp_pl_view,
-                        tmp_sl_view,
-                        prev_soln.layout,
-                        canonical_register,
-                        prev_soln.completed_nodes
-                    )
-                    for new_soln in solution_list:
-                        prev_layers_cpy = copy(prev_soln.output_layers)
-                        prev_layers_cpy.extend(new_soln.output_layers)
-                        next_solutions.append(ShallowSolveSolution(
-                            prev_layers_cpy,
-                            new_soln.layout,
-                            prev_soln.num_swaps+new_soln.num_swaps,
-                            new_soln.completed_nodes
-                        ))
-                tmp_pl_view.popleft()
-                tmp_sl_view.popleft()
-
-                next_solution_cap = int(np.ceil(np.log2(self.solution_cap) + 1))
-                if len(next_solutions) > 2*next_solution_cap:
-                    kept_soln_indices = np.random.choice(np.arange(len(next_solutions)), size=next_solution_cap)  
-                    next_solutions = [next_solutions[k] for k in kept_soln_indices]
-                solutions = next_solutions
-            return solutions
-
-        # Compute all solutions.
+            score = kernel.swap_count / len(kernel.completed_nodes)
+            if hashed_layout not in layout_table:
+                layout_table[hashed_layout] = (kernel, score)
+            else:
+                min_kernel, min_score = layout_table[hashed_layout]
+                if cmp(score, min_score, kernel.swap_count, min_kernel.swap_count):
+                    layout_table[hashed_layout] = (kernel, score)
+        min_kernels = [layout_table[hl] for hl in layout_table]
+        if prune_cap is None:
+            prune_cap = self.solution_cap // 2
+        prune_cap = max(prune_cap, 1)
+        if len(min_kernels) > prune_cap:
+            min_kernels.sort(key=lambda x: x[1])
+            _, min_score = min_kernels[0]
+            filtered_kernels = []
+            for i in range(prune_cap):
+                kernel, score = min_kernels[i]
+                if min_score <= score <= min_score*1.5:
+                    filtered_kernels.append((kernel,score))
+            min_kernels = filtered_kernels
         solutions = []
-        for soln in candidate_list:
-            output_layers_cpy = deepcopy(output_layers)
-            new_layout = current_layout.copy()
-            num_swaps = 0
-            for (i, layer) in enumerate(soln):  # Perform the requisite swaps.
-                output_layers_cpy.append([])
-                for (p0, p1) in layer:
-                    if p0 == p1:
-                        continue
-                    v0, v1 = new_layout[p0], new_layout[p1]
-                    swp_gate = DAGOpNode(
-                        op=SwapGate(),
-                        qargs=[v0, v1]  
-                    )
-                    output_layers_cpy[-1].append(self._remap_gate_for_layout(swp_gate, new_layout, canonical_register))
-                    # Apply swap to modify running layout.
-                    new_layout.swap(p0, p1)
-                    num_swaps += 1
-            # Apply the operations after completing all the swaps.
-            output_layers_cpy.append([])
-            for node in post_nodes:  
-                q0, q1 = node.qargs
-                # Self-verify that proper routing is occurring.
-                if not self.coupling_map.graph.has_edge(new_layout[q0], new_layout[q1]):
-                    print('ERROR: not satisified %d(%d), %d(%d)'\
-                        % (q0.index, current_layout[q0], q1.index, current_layout[q1]))
-                    print('%d edges:' % current_layout[q0], self.coupling_map.neighbors(current_layout[q0]))
-                    print('%d edges:' % current_layout[q1], self.coupling_map.neighbors(current_layout[q1]))
-                    print('|TargetSet| = %d' % len(target_list))
-                    print('Solution: ', soln)
-                    exit()
-                output_layers_cpy[-1].append(self._remap_gate_for_layout(node, new_layout, canonical_register))
-            solutions.append(ShallowSolveSolution(
-                output_layers_cpy,
-                new_layout,
-                num_swaps,
-                completed_nodes
-            ))
-        for node in front_layer:
-            completed_nodes.add(node)
+        for (kernel, _) in min_kernels:
+            curr = kernel.parent
+            while curr is not None:
+                i = len(curr.schedule)-1
+                while i >= 0:
+                    kernel.schedule.appendleft(curr.schedule[i])
+                    i -= 1
+                curr = curr.parent
+            kernel.parent = None
+            solutions.append(kernel)
         return solutions
 
-    def asap_burst_solve(
-        self, 
-        dag,
-        primary_layer_view,
-        secondary_layer_view,
-        current_layout,
-        canonical_register,
-        completed_nodes,
-        burst_size=300
-    ):
-        """
-            Extension for ForeSight where we use ASAP routing to
-            map gates onto a hardware backend. The ASAP routing lasts
-            for up to "burst_size" 2-qubit operations and then
-            returns a list of SWAPs.
+    def explore_kernel(self, kernel):
+        front_layer = kernel.front_layer.copy()
+        next_layer = kernel.next_layer.copy()
+        pred_table = kernel.pred_table.copy()
+        completed_nodes = kernel.completed_nodes.copy()
+        current_layout = kernel.layout.copy()
+        last_cnot_table = kernel.last_cnot_table.copy()
 
-            The ASAP policy here is just a modified version of SABRE
-            that works with ForeSight. Future work could on designing
-            new ASAP policies.
+        schedule = deque([])
 
-            In theory, any policy can be integrated with ForeSight, as we
-            have done here.
-
-            dag: the input dag
-            primary_layer_view: BFS list of 2-qubit operations
-            secondary_layer_view: BFS list of 1-qubit and barrier operations
-            current_layout: running layout before calling ASAP
-            canonical_register: required for gate mapping
-            completed_nodes: a list of dag nodes that have been routed
-            burst_size: the number of 2-qubit operations to route before returning
-
-            Returns an array containing a single ShallowSolveSolution object.
-        """
-        output_layers = [] 
-        completed_nodes = copy(completed_nodes)
-
-        # setup front layer
-        front_layer = []
-        front_layer.extend(primary_layer_view[0])
-        front_layer.extend(secondary_layer_view[0])
-        # setup predecessor table
-        pred = defaultdict(int)
-        for (_,input_node) in dag.input_map.items():
-            for s in self._successors(input_node,dag):
-                pred[s] += 1
-        for node in completed_nodes:
-            for s in self._successors(node,dag):
-                pred[s] += 1
-        # copy layout
-        new_layout = current_layout.copy()
-        completion_count = 0
-        num_swaps = 0
-        while front_layer:
-            output_layers.append([])
-            exec_list = []
+        # Do-while loop, but in python :p
+        exec_list = []
+        while True:  # do ... while exec_list is nonempty
+            schedule.append([])
+            exec_list.clear()
+            # Initialize data structures
             next_front_layer = []
             for node in front_layer:
-                if len(node.qargs) != 2 or node in completed_nodes: 
+                if node in completed_nodes:
+                    exec_list.append(node)
+                elif len(node.qargs) != 2:
                     exec_list.append(node)
                 else:
-                    q0,q1 = node.qargs
-                    if self.coupling_map.graph.has_edge(new_layout[q0],new_layout[q1]):
+                    q0, q1 = node.qargs
+                    if self.coupling_map.graph.has_edge(current_layout[q0], current_layout[q1]):
                         exec_list.append(node)
                     else:
                         next_front_layer.append(node)
-            if exec_list:
-                for node in exec_list:
+            # Complete gates in the exec_list that are not already completed.
+            visited = set()  # maintain a visited set to avoid double counting any gates
+            for node in front_layer:
+                visited.add(node)
+            for node in exec_list:
+                if node not in completed_nodes:
+                    schedule[-1].append(self._remap_gate_for_layout(node, current_layout))
+                    if self.using_o3 and len(node.qargs) == 2:
+                        q0, q1 = node.qargs
+                        p0, p1 = current_layout[q0], current_layout[q1]
+                        # Evict occupying entries from the table
+                        for p in [p0,p1]:
+                            if p not in last_cnot_table:
+                                continue
+                            r0,r1 = last_cnot_table[p]
+                            del last_cnot_table[r0]
+                            del last_cnot_table[r1]
+                        # And replace them with (p0,p1)
+                        last_cnot_table[p0] = (p0,p1)
+                        last_cnot_table[p1] = (p0,p1)
+                for s in self._successors(node):
+                    if s in visited:
+                        continue
                     if node not in completed_nodes:
-                        output_layers[-1].append(
-                            self._remap_gate_for_layout(node, new_layout, canonical_register)
-                        )
-                        if len(node.qargs) == 2:
-                            completion_count += 1
-                        completed_nodes.add(node)
-                    for s in self._successors(node,dag):
-                        if node not in completed_nodes:
-                            pred[s] += 1
-                        if pred[s] == len(s.qargs):
-                            next_front_layer.append(s)
+                        pred_table[s] += 1
+                    if pred_table[s] == len(s.qargs) and self.asap_enabled:
+                        next_front_layer.append(s)
+                        visited.add(s)
+                completed_nodes.add(node)
+            # Update front layer
+            if self.alap_enabled and len(next_front_layer) == 0:
+                front_layer = next_layer
+                next_layer = self.compute_next_layer(front_layer, pred_table, completed_nodes)
+            else:
                 front_layer = next_front_layer
-                continue
-            if completion_count > burst_size:
+            # Only restart loop if we had executed anything
+            if len(exec_list) == 0:
                 break
-            # Nothing is executable, try to swap some qubits.
-            # Setup root set
-            root_set = set()
-            for node in next_front_layer:   
-                q0,q1 = node.qargs
-                root_set.add(new_layout[q0])
-                root_set.add(new_layout[q1])
-            # Create post primary layer view
-            min_swaps = []
-            min_score = -1
-            for s1 in root_set:
-                for s2 in self.coupling_map.neighbors(s1):
-                    test_layout = new_layout.copy() 
-                    test_layout.swap(s1,s2)
-                    score = self._asap_distf(dag, next_front_layer, pred, test_layout,\
-                                completed_nodes)
-                    if score < min_score or min_score == -1:
-                        min_swaps = [(s1,s2)]
-                        min_score = score
-                    elif score == min_score:
-                        min_swaps.append((s1,s2))
-                        min_score = score
-            # Randomly choose one swap.
-            (s1,s2) = min_swaps[np.random.randint(0,high=len(min_swaps))]
-            swp_gate = DAGOpNode(
-                op=SwapGate(),
-                qargs=[new_layout[s1],new_layout[s2]]
-            ) 
-            num_swaps += 1
-            output_layers[-1].append(
-                self._remap_gate_for_layout(swp_gate, new_layout, canonical_register)
+        # Everything currently in the front layer needs to be finished.
+        mid_kernel = SolutionKernel(
+            front_layer,
+            next_layer,
+            pred_table,
+            completed_nodes,
+            schedule,
+            current_layout,
+            kernel.swap_count,
+            kernel.expected_prob_success,
+            kernel,
+            last_cnot_table
+        )
+        if len(front_layer) == 0:
+            candidate_list = [[]]
+        elif self.alap_enabled:
+            path_collection_list = []
+            future_gates = self.compute_future_gates(front_layer, pred_table, completed_nodes)
+            for node in front_layer:
+                q0, q1 = node.qargs
+                path_collection_list.append(
+                        self.path_find_and_fold(mid_kernel, q0, q1, future_gates))
+            candidate_list, suggestions = self.merge_solutions(
+                                            mid_kernel, path_collection_list, future_gates)
+            if candidate_list is None:
+                self.suggestions += 1
+                # Partition front layer in sublayers and explore those kernels.
+                sublayers = []
+                for index_list in suggestions:
+                    if len(index_list) == 0:
+                        continue
+                    sublayer = [front_layer[i] for i in index_list]
+                    sublayers.append(sublayer)
+                first_subkernel = SolutionKernel(
+                    [],
+                    sublayers[0],
+                    pred_table,
+                    completed_nodes,
+                    schedule,
+                    current_layout,
+                    kernel.swap_count,
+                    kernel.expected_prob_success,
+                    kernel,
+                    last_cnot_table
+                ) 
+                curr_kernels = [first_subkernel]
+                for i in range(len(sublayers)):
+                    next_kernels = []
+                    if i == len(sublayers) - 1:
+                        next_sublayer = None
+                    else:
+                        next_sublayer = sublayers[i+1]
+                    curr_sublayer = sublayers[i]
+                    for subkernel in curr_kernels:
+                        children = self.explore_kernel(subkernel)
+                        for child in children:
+                            if next_sublayer is None:
+                                child.front_layer = curr_sublayer
+                                child.next_layer = next_layer
+                            else:
+                                child.front_layer = curr_sublayer
+                                child.next_layer = next_sublayer
+                            next_kernels.append(child)
+                    curr_kernels = next_kernels
+                    # Contract if necessary
+                    cap = int(np.ceil(np.log2(self.solution_cap)+1))
+                    if len(curr_kernels) > cap: 
+                        curr_kernels = self.contract_solutions(curr_kernels, prune_cap=cap//2)
+                return curr_kernels
+        else:  # asap_enabled
+            path_collection_list = []
+            future_gates = self.compute_future_gates(front_layer, pred_table, completed_nodes)
+            for node in front_layer:
+                q0, q1 = node.qargs
+                path_collection_list.append(
+                        self.path_find_and_fold(mid_kernel, q0, q1, future_gates))
+            # Simply choose the best folds from here.
+            layout_table = {}
+            for (i, node) in enumerate(front_layer):
+                singleton = [node]
+                mid_kernel.front_layer = singleton
+                for (fold, score) in path_collection_list[i]:
+                    soln = _path_to_swap_collection(fold)
+                    is_valid, _, layout, size = self._verify_and_measure(
+                        mid_kernel,
+                        soln,
+                        future_gates,
+                        verify_only=True
+                    )
+                    if not is_valid:
+                        continue
+                    hashed_layout = HashedLayout.from_layout(layout)
+                    if hashed_layout not in layout_table:
+                        layout_table[hashed_layout] = (soln, score, size)
+                    else:
+                        _, min_score, min_size = layout_table[hashed_layout]
+                        if cmp(score, min_score, size, min_size):
+                            layout_table[hashed_layout] = (soln, score, size)
+            # Get candidates from layout table
+            candidate_list = [layout_table[hl][0] for hl in layout_table]
+        # Now, create child kernels for each solution in the candidate list.
+        children = []
+        for soln in candidate_list:
+            # Copy data
+            new_layout = current_layout.copy()
+            swap_count = kernel.swap_count
+            expected_prob_success = kernel.expected_prob_success
+            # Copy base schedule
+            new_schedule = deque([])
+            # Copy last cnot table
+            lc_table = last_cnot_table.copy()
+            for layer in schedule:
+                new_schedule.append([])
+                for node in layer:
+                    new_schedule[-1].append(node)
+                    # Update EPS if we are using noise aware execution
+                    if self.noise_aware:
+                        if len(node.qargs) == 1:
+                            v = node.qargs[0]
+                            p = v.index
+                            if node.name == 'measure':
+                                expected_prob_success *= 1 - self.ro_error_rates[p]
+                            else:
+                                expected_prob_success *= 1 - self.sq_error_rates[p]
+                        elif len(node.qargs) == 2:
+                            v0, v1 = node.qargs
+                            p0, p1 = v0.index, v1.index
+                            expected_prob_success *= 1 - self.cx_error_rates[(p0,p1)]
+                        else:
+                            pass
+            # Add swaps now
+            for layer in soln:
+                new_schedule.append([])
+                for (p0,p1) in layer:
+                    if p0 == p1:
+                        continue
+                    v0, v1 = new_layout[p0], new_layout[p1]
+                    swap_gate = DAGOpNode(op=SwapGate(), qargs=[v0,v1])
+                    new_schedule[-1].append(self._remap_gate_for_layout(swap_gate, new_layout))
+                    new_layout.swap(p0,p1)
+                    swap_count += 1
+                    if self.noise_aware:
+                        expected_prob_success *= (1 - self.cx_error_rates[(p0,p1)])**3
+                    if self.using_o3:
+                        # Evict occupying entries from the table
+                        for p in [p0,p1]:
+                            if p not in lc_table:
+                                continue
+                            r0,r1 = lc_table[p]
+                            del lc_table[r0]
+                            del lc_table[r1]
+                        # And replace them with (p0,p1)
+                        lc_table[p0] = (p0,p1)
+                        lc_table[p1] = (p0,p1)
+            child_kernel = SolutionKernel(
+                front_layer,
+                next_layer,
+                pred_table,
+                completed_nodes,
+                new_schedule,
+                new_layout,
+                swap_count,
+                expected_prob_success,
+                kernel,
+                lc_table,
             )
-            new_layout.swap(s1,s2)
-            front_layer = next_front_layer
-        return [ShallowSolveSolution(
-            output_layers,
-            new_layout,
-            num_swaps,
-            completed_nodes
-        )]
+            children.append(child_kernel)
+        return children
+    
+    def compute_future_gates(self, front_layer, pred_table, completed_nodes):
+        future_gates = []
+        
+        incremented = []
+        curr_layer = front_layer
+        future_depth = np.ceil(10*self.mean_degree) 
+        qubit_depth = defaultdict(int)
+        i = -1  # First iteration is front layer, we want to ignore that
+        while i < future_depth and len(curr_layer) > 0:
+            next_layer = []
+            had_2q_gate = False
+            for node in curr_layer:
+                if node in completed_nodes:
+                    continue
+                if i >= 0:
+                    # Only keep gates that have both qubits unused.
+                    if len(node.qargs) == 1 and self.noise_aware:
+                        # Only consider such gates in noise aware mode.
+                        future_gates.append((node, i))
+                    elif len(node.qargs) == 2:
+                        q0, q1 = node.qargs
+                        depth = max(qubit_depth[q0], qubit_depth[q1])
+                        qubit_depth[q0] += 1
+                        qubit_depth[q1] += 1
+                        future_gates.append((node,depth))
+                        had_2q_gate = True
+                    else:
+                        pass
+                for s in self._successors(node):
+                    pred_table[s] += 1
+                    incremented.append(s)
+                    if pred_table[s] == len(s.qargs):
+                        next_layer.append(s)
+            if i < 0 or had_2q_gate:
+                i += 1
+            curr_layer = next_layer
+        for node in incremented:
+            pred_table[node] -= 1
+        return future_gates
 
-    def compute_post_primary(self, primary_layer_view, completed_nodes, depth_unaware=False):
-        """
-            Computes the post primary layer view. A post primary layer
-            view (PPLV) is a subset of the primary layer view that contains
-            2-qubit operations such that for both qubits used in the 
-            operation, this is their first usage in the PPLV.
-            
-            primary_layer_view: the BFS-list of 2-qubit operations in the DAG
-            completed_nodes: a set of already-routed operations.
+    def compute_next_layer(self, front_layer, pred_table, completed_nodes):
+        incremented = []
 
-            Returns a BFS-list of future operations.
-        """
-        if len(primary_layer_view) == 1:
-            post_primary_layer_view = []
-        else:
-            post_primary_layer_view = []
-            visited = set()
-            # The post primary layer is composed the first 2-qubit operation for each qubit
-            # in the circuit. The maximum size of the post primary layer is NQUBITS/2.
-            for i in range(1, min(len(primary_layer_view), int(np.ceil(10*self.mean_degree)))):
-                curr_layer = []
-                for node in primary_layer_view[i]:
-                    # If the node is already completed, do not consider it for the
-                    # heuristic
-                    if node in completed_nodes:
-                        continue
-                    # Otherwise, add it
-                    q0, q1 = node.qargs
-                    if q0 in visited or q1 in visited:
-                        visited.add(q0)
-                        visited.add(q1)
-                        continue
-                    visited.add(q0)
-                    visited.add(q1)
-                    curr_layer.append(node)
-                if primary_layer_view[i]:
-                    if (depth_unaware and curr_layer) or not depth_unaware:
-                        post_primary_layer_view.append(curr_layer)
-        return post_primary_layer_view
+        next_layer = []
+        visited = set()
+        for node in front_layer:
+            for s in self._successors(node):
+                if s in visited:
+                    continue
+                if node not in completed_nodes:
+                    pred_table[s] += 1
+                    incremented.append(s)
+                if pred_table[s] == len(s.qargs):
+                    next_layer.append(s)
+                    visited.add(s)
+        for node in incremented:
+            pred_table[node] -= 1
+        return next_layer
 
-    def path_find_and_fold(self, v0, v1, post_primary_layer_view, current_layout):
+    def path_find_and_fold(self, kernel, v0, v1, future_gates):
         """
             We will examine all pre-computed paths between the physical qubits
             corresponding to v0 and v1. These were computed on pass instantiation
@@ -713,17 +614,137 @@ class ForeSight(TransformationPass):
                 not necessarily equally optimal, but they are the most optimal
                 for their respective path.
         """
-        p0, p1 = current_layout[v0], current_layout[v1]
+        p0, p1 = kernel.layout[v0], kernel.layout[v1]
         if self.coupling_map.graph.has_edge(p0, p1):
             return []
-        # Get path candidates from _path_select.
         path_candidates = self.paths_on_arch[(p0, p1)]
         path_folds = []
         for path in path_candidates:
-            path_folds.extend(self._path_minfold(path, current_layout, post_primary_layer_view))
+            path_folds.extend(self._path_minfold(kernel, path, future_gates))
         return path_folds
+
+    def merge_solutions(self, kernel, path_collection_list, future_gates, runs=1000):
+        front_layer = kernel.front_layer
+
+        if len(front_layer) == 0:
+            return [], None
+        # If there is only one operation in the front layer,
+        # then, we only need to find the best folds for that operation.
+        if len(front_layer) == 1:
+            prio_queue = PathPriorityQueue.buildheap(path_collection_list[0])
+            layout_table = {}
+            while prio_queue.size > 0:
+                path, score = prio_queue.dequeue()
+                soln = _path_to_swap_collection(path)
+                valid, _, final_layout, size = self._verify_and_measure(
+                                kernel,
+                                soln,
+                                future_gates,
+                                verify_only=True
+                            )
+                hashed_layout = HashedLayout.from_layout(final_layout)
+                if not valid:
+                    continue
+                if hashed_layout not in layout_table:
+                    layout_table[hashed_layout] = (soln, score, size)
+                else:
+                    _, min_score, min_size = layout_table[hashed_layout]
+                    if min_score < 0 or cmp(score, min_score, size, min_size):
+                        layout_table[hashed_layout] = (soln, score, size)
+                    else:
+                        break  # This is a heap, so all remaining elements are worse.
+            return [layout_table[hl][0] for hl in layout_table], None
+        # Otherwise, try to merge from path collection.
+        min_collection_list = []
+        min_score = -1
     
-    def _path_minfold(self, path, current_layout, post_primary_layer_view):
+        reduceable = [i for i in range(len(path_collection_list))]
+        # Initialize priority queues for each operation in the front layer
+        prio_queues = [PathPriorityQueue.buildheap(pc) for pc in path_collection_list]
+
+        pjtree = PathJoinTree(
+            [pq.peek()[0] for pq in prio_queues],
+            self,
+            kernel,
+            future_gates
+        )
+        layout_table = {}
+        for r in range(runs):
+            # The root of the path join tree contains a potential solution
+            # to the front layer.
+            root = pjtree.root
+            collection, is_valid, score, layout = root.data, root.valid, root.score, root.layout
+            # Modify heaps and path join tree randomly at every step.
+            # If our root is invalid, then find leaves contributing to the invalid nodes
+            # and replace the corresponding folds with new ones.
+            if not is_valid:
+                self._dfs_find_invalid_and_update(prio_queues, pjtree)
+                continue
+            # Otherwise, randomly adjust the tree.
+            # We perform a random adjustment using a fairness policy.
+            # Specifically, we only choose an element from "reduceable".
+            # After we choose this element, we remove it from reduceable.
+            # When reduceable is empty, we repopulate it.
+            x = np.random.randint(0, high=len(reduceable))
+            ri = reduceable[x]
+            pq = prio_queues[ri]
+            path, score = pq.peek()
+            pq.change_score(path, score+1)  # Push existing root of PQ down the heap
+            new_path = pq.peek()[0]  # Replace that root with the new root in the path join tree
+            pjtree.modify_leaves([ri], [new_path])
+            del reduceable[x]  # Remove ri from reduceable as it has been sued
+            if len(reduceable) == 0:
+                reduceable = [i for i in range(len(path_collection_list))]
+            # Get hash of solution and see if it is already used
+            hashed_layout = HashedLayout.from_layout(layout)
+            if hashed_layout not in layout_table:
+                layout_table[hashed_layout] = (collection, score)
+            else:
+                min_collection, min_score = layout_table[hashed_layout]
+                if score < min_score:
+                    layout_table[hashed_layout] = (collection, score)
+        for hl in layout_table:
+            soln, score = layout_table[hl]
+            min_collection_list.append(soln)
+        # Now, we check if we have any solutions
+        if len(min_collection_list) == 0:
+            # If not, then reset all path priority queues.
+            prio_queues = [PathPriorityQueue.buildheap(pc) for pc in path_collection_list]
+            # Reset the path join tree
+            modified_heaps = [i for i in range(len(path_collection_list))]
+            new_paths = [pq.peek()[0] for pq in prio_queues]
+            pjtree.modify_leaves(modified_heaps, new_paths)
+            # Use DFS to find good splits in the front layer.
+            dfs_stack = [pjtree.root]
+            suggestions = []
+            # Essentially, go down to the topmost valid node. Then, we keep all nodes
+            # "answered" by that node in its own front layer. This is guaranteed to
+            # have a solution as this node itself is a solution
+            while dfs_stack:
+                node = dfs_stack.pop()
+                if node is None:
+                    continue
+                if not node.valid:
+                    dfs_stack.append(node.left_child)
+                    dfs_stack.append(node.right_child)
+                else:
+                    suggestions.append(node.target_index_list)
+            return None, suggestions
+        return min_collection_list, None
+
+    def _remap_gate_for_layout(self, op, layout):
+        new_op = copy(op)
+        new_op.qargs = [self.canonical_register[layout[x]] for x in op.qargs]
+        return new_op
+
+    def _successors(self, node):
+        for (_, s, edge_data) in self.input_dag.edges(node):
+            if not isinstance(s, DAGOpNode):
+                continue
+            if isinstance(edge_data, Qubit):
+                yield s
+
+    def _path_minfold(self, kernel, path, future_gates):
         """
             Computes the minimum cost fold.
 
@@ -736,7 +757,7 @@ class ForeSight(TransformationPass):
         """
         min_dist = -1
         min_folds = []
-        latest_layout = current_layout
+        latest_layout = kernel.layout
         latest_fold = None
         for i in range(len(path)):
             fold = [] if latest_fold is None else copy(latest_fold)
@@ -750,18 +771,29 @@ class ForeSight(TransformationPass):
                     fold.append(path[j])
                     test_layout[p0], test_layout[p1] = test_layout[p1], test_layout[p0]
                     j -= 1
-            else:  # if i != 0, then undo last backwards swap in last fold, and perform forwards swap prior to folded swap. 
+            else:  
+                # if i != 0, then undo last backwards swap in last fold, 
+                # and perform forwards swap prior to folded swap. 
                 f0, f1 = path[i-1]
                 b0, b1 = path[i]
-                test_layout[b0], test_layout[b1] = test_layout[b1], test_layout[b0]  # Flip them back.
-                test_layout[f0], test_layout[f1] = test_layout[f1], test_layout[f0]  # Perform forward flip.
+                test_layout[b0], test_layout[b1] = test_layout[b1], test_layout[b0] # Flip back.
+                test_layout[f0], test_layout[f1] = test_layout[f1], test_layout[f0] # Flip forward.
                 fold.pop()  # Remove last swap.
                 fold.insert(i-1, path[i-1])  # Insert new swap at beginning.
             # Update latest layout.
             latest_layout = test_layout
             latest_fold = fold
             # Compute distance to post primary layer.
-            dist = self._alap_distf(len(path)-1, post_primary_layer_view, test_layout)
+            dist = self._distf(len(path)-1, future_gates, test_layout)
+            if self.using_o3:
+                p0, p1 = fold[0]
+                for p in [p0,p1]:
+                    if p not in kernel.last_cnot_table:
+                        continue
+                    if kernel.last_cnot_table[p] == (p0,p1)\
+                    or kernel.last_cnot_table[p] == (p1,p0):
+                        pass
+                        #dist -= 0.05
             if dist < min_dist or min_dist == -1:
                 min_dist = dist
                 min_folds = [(
@@ -775,24 +807,11 @@ class ForeSight(TransformationPass):
                 ))
         return min_folds
 
-    def _remap_gate_for_layout(self, op, layout, canonical_register):
-        new_op = copy(op)
-        new_op.qargs = [canonical_register[layout[x]] for x in op.qargs]
-        return new_op
-
-    def _successors(self, node, dag):
-        for (_, successor, edge_data) in dag.edges(node):
-            if not isinstance(successor, DAGOpNode):
-                continue
-            if isinstance(edge_data, Qubit):
-                yield successor
-
     def _verify_and_measure(
         self, 
+        kernel,
         soln,
-        target_list,
-        current_layout,
-        post_primary_layer_view,
+        future_gates,
         verify_only=False
     ):
         """
@@ -806,33 +825,32 @@ class ForeSight(TransformationPass):
             current_layout: the current running layout during routing
             post_primary_layer_view: a BFS-list of future operations.
 
-            Returns a tuple (IS_A_SOLN, dist) where IS_A_SOLN is a boolean and
-                dist is a float.
+            Returns a tuple (IS_A_SOLN, cost, final_layout, size) where IS_A_SOLN is
+                a bool indicating if the solution satisfies all operations in the
+                front layer.
         """
-        if len(target_list) == 0:
+        if len(kernel.front_layer) == 0:
             return True, 0
-        test_layout = current_layout.copy()
+        test_layout = kernel.layout.copy()
         size = 0
-        flattened_soln = []
         for layer in soln:
-            for (p0, p1) in layer:
+            for (p0,p1) in layer:
                 test_layout.swap(p0, p1)
-                flattened_soln.append((p0,p1))
                 size += 1
         max_allowed_size = 0
-        for (v0, v1) in target_list:
-            max_allowed_size += self.distance_matrix[current_layout[v0]][current_layout[v1]]
+        for node in kernel.front_layer: 
+            v0, v1 = node.qargs
             p0, p1 = test_layout[v0], test_layout[v1]
             if not self.coupling_map.graph.has_edge(p0, p1):
-                return False, 0
+                return False, 0, test_layout, size
         # If we have gotten to this point, then our soln is good.
         if verify_only:
             dist = 0
         else:
-            dist = self._alap_distf(size, post_primary_layer_view, test_layout)
-        return True, dist
+            dist = self._distf(size, future_gates, test_layout)
+        return True, dist, test_layout, size
 
-    def _alap_distf(self, soln_size, post_primary_layer_view, test_layout):
+    def _distf(self, soln_size, post_primary_layer_view, test_layout):
         """
             The distance heuristic function to determine the goodness of a
             solution.
@@ -846,66 +864,54 @@ class ForeSight(TransformationPass):
         """
         dist = 0.0
         num_ops = 0
-        for r in range(0, len(post_primary_layer_view)):
-            post_layer = post_primary_layer_view[r]
-            sub_sum = 0.0
-            for node in post_layer:
+        for (node, depth) in post_primary_layer_view:
+            depth_adjust = np.exp(-(depth/((self.mean_degree)**1.5))**2)
+            if len(node.qargs) == 1 and self.noise_aware:
+                q = node.qargs
+                p = test_layout[q]
+                if node.name == 'measure':
+                    w = self.ro_error_rates[p]
+                else:
+                    w = self.sq_error_rates[p]
+                dist += w * depth_adjust
+            else:
                 q0, q1 = node.qargs
                 p0, p1 = test_layout[q0], test_layout[q1]
-                num_ops += 1
-                s = self.distance_matrix[p0][p1]
-                sub_sum += s
-            dist += sub_sum * np.exp(-(r/((self.mean_degree)**1.5))**2)
+                dist += self.distance_matrix[p0][p1] * depth_adjust
+            num_ops += 1
         if num_ops == 0:
             return 0
         else:
             dist = dist/num_ops
             return dist+soln_size*np.exp(-(num_ops/(self.mean_degree**1.5))) 
-    
-    def _asap_distf(self, dag, front_layer, pred, test_layout, completed_nodes, explore_size=20): 
-        """
-            The lookahead distance heuristic used in SABRE.
 
-            dag: the input dag
-            front_layer: the current top layer that is being routed
-            pred: the predecessor table for each dag node
-            test_layout: layout to evaluate
-            completed_nodes: a set of dag nodes that have been routed
-            explore_size: number of dag nodes to consider for layout evaluation
+    def _dfs_find_invalid_and_update(self, prio_queues, pjtree):
+        dfs_stack = [pjtree.root]
 
-            Returns a float that is the distance value (lower is better).
-        """
-        inc = []
-        tmp_front = front_layer
-        
-        dist1,dist2 = 0,0
-        explored = 0
-        done = False
-        for node in front_layer:
-            v0,v1 = node.qargs
-            p0,p1 = test_layout[v0],test_layout[v1]
-            dist1 += self.distance_matrix[p0][p1]
-        dist1 /= len(front_layer)
-        while tmp_front and not done:
-            next_front = []
-            for node in tmp_front:
-                for s in self._successors(node,dag):
-                    inc.append(s)
-                    pred[s] += 1
-                    if pred[s] == len(s.qargs):
-                        next_front.append(s)
-                        if len(s.qargs) == 2 and s not in completed_nodes:
-                            v0,v1 = s.qargs
-                            p0,p1 = test_layout[v0],test_layout[v1]
-                            dist2 += 0.5*self.distance_matrix[p0][p1]
-                            explored += 1 
-                if explored >= explore_size:
-                    done = True
-                    break
-            tmp_front = next_front
-        for node in inc:
-            pred[node] -= 1
-        if explored > 0:
-            dist2 /= explored
-        return dist1+dist2
+        modified_heaps = []
+        new_paths = []
+        while dfs_stack:
+            node = dfs_stack.pop()
+            left, right = node.left_child, node.right_child
+            if len(node.target_index_list) > 0:
+                continue
+            # Only go down invalid children
+            # If neither are invalid, then update a random entry in the target_index_list.
+            if (left is None or left.valid) and (right is None or right.valid):
+                updated_index = int(np.random.choice(node.target_index_list, size=1))
+                pq = prio_queues[updated_index]
+                path, score = pq.peek()
+                pq.change_score(path, score+1)  # Push this fold down the priority queue.
+                # Now, replace this fold in the path join tree with the new
+                # root of the heap.
+                new_paths.append(pq.peek()[0])
+                modified_heaps.append(updated_index)
+            else:
+                if left is not None and left.valid == 0:
+                    dfs_stack.append(left)
+                if right is not None and right.valid == 0:
+                    dfs_stack.append(right)
+        # Modify path join tree.
+        if len(modified_heaps) > 0:
+            pjtree.modify_leaves(modified_heaps, new_paths)
     
