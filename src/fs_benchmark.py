@@ -168,7 +168,7 @@ NOISEBENCH = [
     'ba_20_1_1.qasm',
     'multiply_n13.qasm',
     'multiplier_n15.qasm',
-    'vqe_n7.qasm'
+    'qpe_n9.qasm'
 ]
 
 def generate_sens_benchmarks(sens_folder, circuits, arch_file,
@@ -344,6 +344,9 @@ def build_csv_file(folder, arch_file, output_file):
     df = pd.DataFrame(data=data, index=benchmark_folder)
     df.to_csv(output_file)
 
+def noise_simulation(folder):
+    pass
+
 def _sabre_route(circ, arch_file):
     backend = read_arch_file(arch_file)
     compiler = SabreSwap(backend, heuristic='decay')
@@ -355,9 +358,8 @@ def _sabre_route(circ, arch_file):
     return sabre_pass.run(circ)
 
 FORESIGHT_DEFAULT_FLAGS = FLAG_ALAP
-def _foresight_route(circ, arch_file, flags=FORESIGHT_DEFAULT_FLAGS):
+def _foresight_route(circ, arch_file, compiler):
     backend = read_arch_file(arch_file)
-    compiler = ForeSight(backend, slack=2, solution_cap=64, flags=flags) 
     foresight_pass = PassManager([
         TrivialLayout(backend),
         ApplyLayout(),

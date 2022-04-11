@@ -64,13 +64,6 @@ class ForeSight(TransformationPass):
         self.coupling_map = coupling_map        
         self.solution_cap = solution_cap
 
-        self.distance_matrix, self.paths_on_arch = process_coupling_map(
-            coupling_map,
-            slack,
-            edge_weights=cx_error_rates,
-        ) 
-        self.mean_degree = len(self.coupling_map.get_edges()) / self.coupling_map.size()
-
         # Runtime data structures
         self.input_dag = None
         self.canonical_register = None
@@ -88,6 +81,13 @@ class ForeSight(TransformationPass):
         self.cx_error_rates = cx_error_rates
         self.sq_error_rates = sq_error_rates
         self.ro_error_rates = ro_error_rates
+        
+        self.distance_matrix, self.paths_on_arch = process_coupling_map(
+            coupling_map,
+            slack,
+            edge_weights=cx_error_rates if self.noise_aware else None,
+        ) 
+        self.mean_degree = len(self.coupling_map.get_edges()) / self.coupling_map.size()
 
         # usage statistics
         self.suggestions = 0
@@ -119,6 +119,12 @@ class ForeSight(TransformationPass):
         """
         mapped_dag = dag._copy_circuit_metadata()
 
+        # Clear global data structures
+        self.suggestions = 0
+        self.iterations = 0
+        self.prunings = 0
+        self.swap_segments.clear()
+        self.solutions.clear()
         # Initialize global data structures
         self.input_dag = dag
         self.canonical_register = dag.qregs["q"]
@@ -238,7 +244,10 @@ class ForeSight(TransformationPass):
                     if cmp(cnots, min_cnots, depth, min_depth):
                         mapped_dag = test_dag
         else:
-            best_solution = min(completed_solutions, key=lambda x: x.swap_count)
+            if self.noise_aware:
+                best_solution = max(completed_solutions, key=lambda x: x.expected_prob_success)
+            else:
+                best_solution = min(completed_solutions, key=lambda x: x.swap_count)
             self.property_set['final_layout'] = best_solution.layout
             if self.fake_run:
                 return mapped_dag   
@@ -257,6 +266,9 @@ class ForeSight(TransformationPass):
                     print('\tOriginal circuit: ', orig_ops)
                     print('\tMapped circuit: ', mapped_ops)
                     break
+            if self.debug:
+                print('Number of swaps: %d' % best_solution.swap_count)
+                print('EPS: %f' % best_solution.expected_prob_success)
         if self.debug:
             print('Statistics')
             print('\tSuggestion usage:', self.suggestions)
@@ -269,7 +281,10 @@ class ForeSight(TransformationPass):
             layout = kernel.layout
             hashed_layout = HashedLayout.from_layout(layout)
 
-            score = kernel.swap_count / len(kernel.completed_nodes)
+            if self.noise_aware:
+                score = (1.0-kernel.expected_prob_success) / len(kernel.completed_nodes)
+            else:
+                score = kernel.swap_count / len(kernel.completed_nodes)
             if hashed_layout not in layout_table:
                 layout_table[hashed_layout] = (kernel, score)
             else:
@@ -337,19 +352,6 @@ class ForeSight(TransformationPass):
             for node in exec_list:
                 if node not in completed_nodes:
                     schedule[-1].append(self._remap_gate_for_layout(node, current_layout))
-                    if self.using_o3 and len(node.qargs) == 2:
-                        q0, q1 = node.qargs
-                        p0, p1 = current_layout[q0], current_layout[q1]
-                        # Evict occupying entries from the table
-                        for p in [p0,p1]:
-                            if p not in last_cnot_table:
-                                continue
-                            r0,r1 = last_cnot_table[p]
-                            del last_cnot_table[r0]
-                            del last_cnot_table[r1]
-                        # And replace them with (p0,p1)
-                        last_cnot_table[p0] = (p0,p1)
-                        last_cnot_table[p1] = (p0,p1)
                 for s in self._successors(node):
                     if s in visited:
                         continue
@@ -483,8 +485,10 @@ class ForeSight(TransformationPass):
                 new_schedule.append([])
                 for node in layer:
                     new_schedule[-1].append(node)
-                    # Update EPS if we are using noise aware execution
-                    if self.noise_aware:
+                        # Update EPS if we have error rates available.
+                    if self.cx_error_rates is not None\
+                    and self.ro_error_rates is not None\
+                    and self.sq_error_rates is not None:
                         if len(node.qargs) == 1:
                             v = node.qargs[0]
                             p = v.index
@@ -509,19 +513,8 @@ class ForeSight(TransformationPass):
                     new_schedule[-1].append(self._remap_gate_for_layout(swap_gate, new_layout))
                     new_layout.swap(p0,p1)
                     swap_count += 1
-                    if self.noise_aware:
+                    if self.cx_error_rates is not None:
                         expected_prob_success *= (1 - self.cx_error_rates[(p0,p1)])**3
-                    if self.using_o3:
-                        # Evict occupying entries from the table
-                        for p in [p0,p1]:
-                            if p not in lc_table:
-                                continue
-                            r0,r1 = lc_table[p]
-                            del lc_table[r0]
-                            del lc_table[r1]
-                        # And replace them with (p0,p1)
-                        lc_table[p0] = (p0,p1)
-                        lc_table[p1] = (p0,p1)
             child_kernel = SolutionKernel(
                 front_layer,
                 next_layer,
@@ -785,15 +778,6 @@ class ForeSight(TransformationPass):
             latest_fold = fold
             # Compute distance to post primary layer.
             dist = self._distf(len(path)-1, future_gates, test_layout)
-            if self.using_o3:
-                p0, p1 = fold[0]
-                for p in [p0,p1]:
-                    if p not in kernel.last_cnot_table:
-                        continue
-                    if kernel.last_cnot_table[p] == (p0,p1)\
-                    or kernel.last_cnot_table[p] == (p1,p0):
-                        pass
-                        #dist -= 0.05
             if dist < min_dist or min_dist == -1:
                 min_dist = dist
                 min_folds = [(
@@ -867,7 +851,7 @@ class ForeSight(TransformationPass):
         for (node, depth) in post_primary_layer_view:
             depth_adjust = np.exp(-(depth/((self.mean_degree)**1.5))**2)
             if len(node.qargs) == 1 and self.noise_aware:
-                q = node.qargs
+                q = node.qargs[0]
                 p = test_layout[q]
                 if node.name == 'measure':
                     w = self.ro_error_rates[p]
