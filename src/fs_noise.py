@@ -78,7 +78,7 @@ def google_sycamore_noise_model(backend, noise_file, noise_factor=1.0):
         warnings=False,
         use_1qerror=True,
         use_readout=True,
-        use_coherence=True
+        use_coherence=False
     )
     cx_error_rates = {}
     for (i,j) in sycamore.get_edges():
