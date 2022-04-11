@@ -246,7 +246,7 @@ if __name__ == '__main__':
         batch4,
         batch5,
         batch6,
-            batch7
+        batch7
     ]
 
     from sys import argv
