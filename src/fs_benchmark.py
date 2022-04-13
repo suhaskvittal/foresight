@@ -416,7 +416,6 @@ def _tket_route(circ, arch_file):
     try:
         pytket.passes.DelayMeasures().apply(tket_circ)
         pytket.passes.CXMappingPass(backend, placement).apply(tket_circ)
+        return QuantumCircuit.from_qasm_str(circuit_to_qasm_str(tket_circ))
     except:
-        pass
-    return QuantumCircuit.from_qasm_str(circuit_to_qasm_str(tket_circ))
-
+        return QuantumCircuit(1,1)

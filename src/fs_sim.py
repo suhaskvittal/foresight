@@ -46,7 +46,7 @@ def simulate(folder):
             'fidelity': fidelity,
             'ist': ist
         }
-    writer = open('%s/counts.pkl' % folder, 'w')
+    writer = open('%s/counts.pkl' % folder, 'wb')
     pickle.dump(data, writer)
     writer.close()
 

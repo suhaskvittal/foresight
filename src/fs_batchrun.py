@@ -37,7 +37,8 @@ def batch1():
         '../benchmarks/mapped_circuits/google_sycamore',
         '../arch/google_weber.arch',
         'foresight',
-        _foresight
+        _foresight,
+        runs=1
     )
     benchmark_circuits(
         '../benchmarks/mapped_circuits/rigetti_aspen9',
@@ -75,7 +76,8 @@ def batch2():
         '../benchmarks/mapped_circuits/rigetti_aspen9',
         '../arch/rigetti_aspen9.arch',
         'foresight',
-        _foresight
+        _foresight,
+        runs=1,
     )
     benchmark_circuits(
         '../benchmarks/mapped_circuits/ibm_tokyo',
@@ -113,7 +115,8 @@ def batch3():
         '../benchmarks/mapped_circuits/ibm_tokyo',
         '../arch/ibm_tokyo.arch',
         'foresight',
-        _foresight
+        _foresight,
+        runs=1
     )
     benchmark_circuits(
         '../benchmarks/mapped_circuits/google_sycamore',
@@ -175,7 +178,8 @@ def batch5():   # BV sensitivity analysis 1
                 '../benchmarks/bvsens1',
                 '../arch/google_weber.arch',
                 'fs_%d_%d' % (slack, solution_cap),
-                _foresight
+                _foresight,
+                runs=1
             )
 
 def batch6():   # BV sensitivity analysis 2
