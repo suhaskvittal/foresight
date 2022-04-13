@@ -1,4 +1,5 @@
-src/venv/
+src/venv
+src/venv/*
 src/*.pbs*
 src/jobs/
 benchmarks
@@ -6,3 +7,7 @@ benchmarks/*
 data
 data/*
 benchmarks.tar.gz
+pace
+pace/*
+*.gnu*
+*.log

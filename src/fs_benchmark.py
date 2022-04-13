@@ -344,15 +344,15 @@ def benchmark_circuits(folder, arch_file, router_name, routing_func, runs=5):
         best_circ = None 
         # Get input circuit
         base_circ = QuantumCircuit.from_qasm_file(file_path)
-        tracemalloc.start(4)
         for r in range(runs):
             circ = base_circ.copy()
             # Benchmark here
-            tracemalloc.reset_peak()
+            tracemalloc.start(1)
             start = time.time()
             output_circ = routing_func(circ, arch_file)
             end = time.time()
             _, peak_mem = tracemalloc.get_traced_memory()
+            tracemalloc.stop()
             # Transpile circuit with O0 to basis gate set.
             output_circ = transpile(
                 output_circ,
@@ -380,7 +380,6 @@ def benchmark_circuits(folder, arch_file, router_name, routing_func, runs=5):
             # Record data
             time_array.append((end - start) * 1000)  # (end-start) is in seconds -- want in ms
             memory_array.append(peak_mem)  # peak_mem is in bytes
-        tracemalloc.stop()
         # Print out data to stdout
         if 'cx' not in best_circ.count_ops():
             best_cnots = 0
@@ -555,8 +554,10 @@ from pytket import OpType
 from pytket.circuit import Qubit as TketQubit
 from pytket.circuit import Node as TketNode
 from pytket.qasm import circuit_from_qasm_str, circuit_to_qasm_str
-from pytket.architecture import Architecture
-from pytket.placement import Placement
+#from pytket.architecture import Architecture
+#from pytket.placement import Placement
+from pytket.routing import Architecture
+from pytket.routing import Placement
 from pytket.transform import CXConfigType
 import pytket.passes
 
@@ -585,7 +586,6 @@ def _tket_route(circ, arch_file):
     try:
         pytket.passes.DelayMeasures().apply(tket_circ)
         pytket.passes.CXMappingPass(backend, placement).apply(tket_circ)
+        return QuantumCircuit.from_qasm_str(circuit_to_qasm_str(tket_circ))
     except:
-        pass
-    return QuantumCircuit.from_qasm_str(circuit_to_qasm_str(tket_circ))
-
+        return QuantumCircuit(1,1)
