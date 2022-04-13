@@ -148,8 +148,7 @@ class ForeSight(TransformationPass):
             initial_layout, 
             0,                  # Swap count
             1.0,                # Expected prob success
-            None,               # Parent solution kernel
-            {},                 # Last cnot table
+            None                # Parent solution kernel
         )
         self.solutions = [init_kernel]
         # Start execution
@@ -248,6 +247,7 @@ class ForeSight(TransformationPass):
                 best_solution = max(completed_solutions, key=lambda x: x.expected_prob_success)
             else:
                 best_solution = min(completed_solutions, key=lambda x: x.swap_count)
+            self.swap_segments = best_solution.swap_segments
             self.property_set['final_layout'] = best_solution.layout
             if self.fake_run:
                 return mapped_dag   
@@ -323,7 +323,6 @@ class ForeSight(TransformationPass):
         pred_table = kernel.pred_table.copy()
         completed_nodes = kernel.completed_nodes.copy()
         current_layout = kernel.layout.copy()
-        last_cnot_table = kernel.last_cnot_table.copy()
 
         schedule = deque([])
 
@@ -381,7 +380,6 @@ class ForeSight(TransformationPass):
             kernel.swap_count,
             kernel.expected_prob_success,
             kernel,
-            last_cnot_table
         )
         if len(front_layer) == 0:
             candidate_list = [[]]
@@ -413,7 +411,6 @@ class ForeSight(TransformationPass):
                     kernel.swap_count,
                     kernel.expected_prob_success,
                     kernel,
-                    last_cnot_table
                 ) 
                 curr_kernels = [first_subkernel]
                 for i in range(len(sublayers)):
@@ -479,8 +476,8 @@ class ForeSight(TransformationPass):
             expected_prob_success = kernel.expected_prob_success
             # Copy base schedule
             new_schedule = deque([])
-            # Copy last cnot table
-            lc_table = last_cnot_table.copy()
+            # Copy swap segments
+            swap_segments = kernel.swap_segments.copy()
             for layer in schedule:
                 new_schedule.append([])
                 for node in layer:
@@ -515,6 +512,7 @@ class ForeSight(TransformationPass):
                     swap_count += 1
                     if self.cx_error_rates is not None:
                         expected_prob_success *= (1 - self.cx_error_rates[(p0,p1)])**3
+            swap_segments.append(swap_count - kernel.swap_count)
             child_kernel = SolutionKernel(
                 front_layer,
                 next_layer,
@@ -525,7 +523,7 @@ class ForeSight(TransformationPass):
                 swap_count,
                 expected_prob_success,
                 kernel,
-                lc_table,
+                swap_segments=swap_segments
             )
             children.append(child_kernel)
         return children
@@ -537,7 +535,10 @@ class ForeSight(TransformationPass):
         curr_layer = front_layer
         future_depth = np.ceil(10*self.mean_degree) 
         qubit_depth = defaultdict(int)
-        i = -1  # First iteration is front layer, we want to ignore that
+        if self.asap_enabled:
+            i = 0
+        else:
+            i = -1  # First iteration is front layer, we want to ignore that
         while i < future_depth and len(curr_layer) > 0:
             next_layer = []
             had_2q_gate = False

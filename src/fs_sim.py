@@ -41,12 +41,13 @@ def simulate(folder):
                 basis_gates=G_QISKIT_GATE_SET, noise_model=noise_model).result().get_counts()
         fidelity = get_evaluation_output(base_counts, counts, metric='fidelity')
         ist = get_evaluation_output(base_counts, counts, metric='ist')
+        print('%s: fidelity=%f, ist=%f' % (cat, fidelity, ist))
         data[cat] = {
             'counts': counts,
             'fidelity': fidelity,
             'ist': ist
         }
-    writer = open('%s/counts.pkl' % folder, 'w')
+    writer = open('%s/counts.pkl' % folder, 'wb')
     pickle.dump(data, writer)
     writer.close()
 

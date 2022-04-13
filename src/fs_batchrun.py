@@ -229,27 +229,65 @@ def batch7():   # Noise simulation routing
         '../benchmarks/noise',
         '../arch/google_weber.arch',
         'foresight',
-        _fs1
+        _fs1,
+        runs=1
     )
     benchmark_circuits(
         '../benchmarks/noise',
         '../arch/google_weber.arch',
         'noisy_foresight',
-        _fs2 
+        _fs2,
+        runs=1
     )
 
-if __name__ == '__main__':
-    batch_list = [
-        batch1,
-        batch2,
-        batch3,
-        batch4,
-        batch5,
-        batch6,
-        batch7
-    ]
+def batch8():   # SK Models routing
+    archs = ['../arch/google_weber.arch']
+    arch_names = ['google_sycamore']
+    for (i,arch_file) in enumerate(archs):
+        print(arch_names[i])
+        backend = read_arch_file(arch_file)
+        benchmark_circuits(
+            '../benchmarks/skbench/%s' % arch_names[i],
+            arch_file,
+            'sabre',
+            _sabre_route
+        )
+        foresight_asap = ForeSight(backend, slack=2, solution_cap=64,
+                flags=FLAG_ASAP|FLAG_OPT_FOR_O3)
+        _fs = lambda x,y: _foresight_route(x,y,foresight_asap)
+        benchmark_circuits(
+            '../benchmarks/skbench/%s' % arch_names[i],
+            arch_file,
+            'foresight_asap',
+            _fs,
+            runs=1
+        )
 
+def batch9():
+    archs = ['../arch/google_weber.arch']
+    arch_names = ['google_sycamore']
+    for (i,arch_file) in enumerate(archs):
+        print(arch_names[i])
+        backend = read_arch_file(arch_file)
+        benchmark_circuits(
+            '../benchmarks/irrbench/%s' % arch_names[i],
+            arch_file,
+            'sabre',
+            _sabre_route
+        )
+        foresight_asap = ForeSight(backend, slack=2, solution_cap=64,
+                flags=FLAG_ASAP|FLAG_OPT_FOR_O3)
+        _fs = lambda x,y: _foresight_route(x,y,foresight_asap)
+        benchmark_circuits(
+            '../benchmarks/irrbench/%s' % arch_names[i],
+            arch_file,
+            'foresight_asap',
+            _fs,
+            runs=1
+        )
+
+if __name__ == '__main__':
     from sys import argv
     batch_no = int(argv[1])
-    batch_list[batch_no-1]()
+    exec('batch%d()' % batch_no)
 

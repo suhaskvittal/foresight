@@ -15,7 +15,7 @@ class SolutionKernel:
         swap_count,
         expected_prob_success, 
         parent,
-        last_cnot_table,
+        swap_segments=None
     ):
         self.front_layer = front_layer
         self.next_layer = next_layer
@@ -28,5 +28,5 @@ class SolutionKernel:
         self.expected_prob_success = expected_prob_success
         self.parent = parent
             
-        self.last_cnot_table = last_cnot_table
+        self.swap_segments = [] if swap_segments is None else swap_segments 
 

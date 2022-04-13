@@ -14,6 +14,7 @@ from qiskit.visualization import plot_histogram
 from timeit import default_timer as timer
 from copy import copy, deepcopy
 
+from fs_statsabre import *
 from fs_foresight import *
 from fs_util import *
 
@@ -137,6 +138,102 @@ def generate_benchmarks_for_backend(arch_file, backend_name,
         writer.close()
     print('done')
 
+def convergence_analysis(output_file):
+    arch_file = '../arch/100grid.arch'
+    backend = read_arch_file(arch_file)
+
+    data = {}
+    layout_pass = qiskitopt3_layout_pass(backend)
+    for circ_name in ['bv_n50.qasm', 'bv_n100.qasm']:
+        circ_path = '../benchmarks/base/%s' % circ_name
+        circ = QuantumCircuit.from_qasm_file(circ_path)
+        circ = layout_pass.run(circ)
+
+        sabre = PassManager([
+            TrivialLayout(backend),
+            ApplyLayout(),
+            SabreSwap(backend, heuristic='decay')
+        ])
+
+        foresight = PassManager([
+            TrivialLayout(backend),
+            ApplyLayout(),
+            ForeSight(backend, slack=2, solution_cap=64, flags=FLAG_ALAP)
+        ])
+
+        best_sabre_circ = None
+        best_foresight_circ = None
+        d = {'sabre': [], 'foresight': []}
+        for i in range(100):
+            print('iteration %d' % i)
+            sabre_circ = sabre.run(circ)
+            sabre_circ = transpile(
+                sabre_circ,
+                basis_gates=G_QISKIT_GATE_SET,
+                coupling_map=backend,
+                optimization_level=0
+            )
+            if best_sabre_circ is None:
+                best_sabre_cnots = np.inf
+            else:
+                best_sabre_cnots = best_sabre_circ.count_ops()['cx']
+            sabre_cnots = sabre_circ.count_ops()['cx']
+            if sabre_cnots < best_sabre_cnots:
+                best_sabre_cnots = sabre_cnots
+                best_sabre_circ = sabre_circ
+            print('\tsabre: %d' % best_sabre_cnots)
+            d['sabre'].append(best_sabre_cnots)
+
+            foresight_circ = foresight.run(circ)
+            foresight_circ = transpile(
+                foresight_circ,
+                basis_gates=G_QISKIT_GATE_SET,
+                coupling_map=backend,
+                optimization_level=0
+            )
+            if best_foresight_circ is None:
+                best_foresight_cnots = np.inf
+            else:
+                best_foresight_cnots = best_foresight_circ.count_ops()['cx']
+            foresight_cnots = foresight_circ.count_ops()['cx']
+            if foresight_cnots < best_foresight_cnots:
+                best_foresight_cnots = foresight_cnots
+                best_foresight_circ = foresight_circ
+            print('\tforesight: %d' % best_foresight_cnots)
+            d['foresight'].append(best_foresight_cnots)
+        data[circ_name] = d
+    writer = open(output_file, 'wb')
+    pickle.dump(data, writer)
+    writer.close()
+
+def insertion_analysis(output_file):
+    arch_file = '../arch/ibm_tokyo.arch'
+    backend = read_arch_file(arch_file)
+
+    circ_file = '../benchmarks/base/vqe_n8.qasm'
+    circ = QuantumCircuit.from_qasm_file(circ_file)
+
+    layout_pass = qiskitopt3_layout_pass(backend)
+    circ = layout_pass.run(circ)
+
+    data = {}
+    sabre_compiler = StatSABRE(backend, heuristic='decay')
+    foresight_compiler = ForeSight(backend, slack=2, solution_cap=64, flags=FLAG_ALAP)
+
+    PassManager([TrivialLayout(backend), ApplyLayout(), sabre_compiler]).run(circ)
+    PassManager([TrivialLayout(backend), ApplyLayout(), foresight_compiler]).run(circ)
+    data['sabre'] = sabre_compiler.swap_segments
+    data['foresight'] = foresight_compiler.swap_segments
+
+    print(sabre_compiler.swap_segments)
+    print(sum(sabre_compiler.swap_segments))
+    print(foresight_compiler.swap_segments)
+    print(sum(foresight_compiler.swap_segments))
+
+    writer = open(output_file, 'wb')
+    pickle.dump(data, writer)
+    writer.close()
+
 BVSENS1 = [
     'bv_n50.qasm'
 ]
@@ -169,6 +266,35 @@ NOISEBENCH = [
     'multiply_n13.qasm',
     'multiplier_n15.qasm',
     'qpe_n9.qasm'
+]
+
+# Sherrington-Kirkpatrik QAOA benchmarks
+SKBENCH = [
+    'SK_10_1.qasm',
+    'SK_11_1.qasm',
+    'SK_12_1.qasm',
+    'SK_13_1.qasm',
+    'SK_14_1.qasm',
+    'SK_15_1.qasm',
+    'SK_16_1.qasm',
+    'SK_17_1.qasm',
+    'SK_18_1.qasm'
+]
+
+# 3-regular QAOA benchmarks
+TREGBENCH = [
+    
+]
+
+# Irregular QAOA benchmarks
+IRRBENCH = [
+    'ba_10_1_1.qasm',
+    'ba_15_1_1.qasm',
+    'ba_20_1_1.qasm',
+    'ba_25_1_1.qasm',
+    'ba_30_1_1.qasm',
+    'ba_40_1_1.qasm',
+    'ba_50_1_1.qasm'
 ]
 
 def generate_sens_benchmarks(sens_folder, circuits, arch_file,
@@ -280,12 +406,13 @@ def benchmark_circuits(folder, arch_file, router_name, routing_func, runs=5):
         writer.write('memory\t%.3f\n' % np.mean(memory_array))
         writer.close()
 
-def build_csv_file(folder, arch_file, output_file):
+BASE_COMPILERS=['sabre','foresight','astar']
+def compile_data(folder, arch_file, csv_file, pickle_file, compilers=BASE_COMPILERS):
     benchmark_folder = [d for d in os.listdir(folder) if os.path.isdir(os.path.join(folder, d))]
-    data = defaultdict(list)
+    csv_data = defaultdict(list)
+    pkl_data = {}
     base_columns = ['cnots added', 'depth', 'time', 'memory', 'cnots added O3', 'depth O3']
     columns = []
-    compilers = ['sabre', 'fsalap', 'astar']
     for cat in compilers:
         for b in base_columns:
             columns.append('%s %s' % (cat, b))
@@ -299,8 +426,18 @@ def build_csv_file(folder, arch_file, output_file):
             base_cnots = 0
         else:
             base_cnots = base_circ.count_ops()['cx']
-        data['original cnots'].append(base_cnots)
+        base_depth = base_circ.depth()
+        csv_data['original cnots'].append(base_cnots)
+        pkl_data[subfolder] = {
+            'original': {
+                'gate count': base_circ.size(),
+                'original cnots': base_cnots,
+                'original depth': base_depth,
+                'original qasm': base_circ.qasm()
+            }
+        }
         for cat in compilers:
+            pkl_data[subfolder][cat] = {}
             print('\treading %s' % cat)
             data_file = os.path.join(bench_path, '%s_data.txt' % cat)
             reader = open(data_file, 'r')
@@ -314,9 +451,16 @@ def build_csv_file(folder, arch_file, output_file):
                 else:
                     value = float(line_data[1])
                 if dtype == 'cnots':
-                    data['%s cnots added' % cat].append(value - base_cnots)
+                    csv_data['%s cnots added' % cat].append(value - base_cnots)
+                    pkl_data[subfolder][cat]['cnots added'] = value - base_cnots
                 else:
-                    data['%s %s' % (cat, dtype)].append(value)
+                    csv_data['%s %s' % (cat, dtype)].append(value)
+                    if dtype == 'depth':
+                        pkl_data[subfolder][cat]['final depth'] = value
+                    elif dtype == 'time':
+                        pkl_data[subfolder][cat]['execution time'] = value
+                    elif dtype == 'memory':
+                        pkl_data[subfolder][cat]['memory'] = value
                 line = reader.readline()
             reader.close()
             print('\tperforming O3 on %s' % cat)
@@ -338,14 +482,40 @@ def build_csv_file(folder, arch_file, output_file):
             else:
                 tc_cnots = trans_circ.count_ops()['cx']
             tc_depth = trans_circ.depth()
-            data['%s cnots added O3' % cat].append(tc_cnots-base_cnots)
-            data['%s depth O3' % cat].append(tc_depth)
+            csv_data['%s cnots added O3' % cat].append(tc_cnots-base_cnots)
+            csv_data['%s depth O3' % cat].append(tc_depth)
+            pkl_data[subfolder][cat]['cnots added O3'] = tc_cnots-base_cnots
+            pkl_data[subfolder][cat]['final depth O3'] = tc_depth
+            pkl_data[subfolder][cat]['mapped qasm'] = original_circ.qasm()
+            pkl_data[subfolder][cat]['final qasm'] = trans_circ.qasm()
             print('\transpiled cnots = %d, depth = %d' % (tc_cnots-base_cnots, tc_depth))
-    df = pd.DataFrame(data=data, index=benchmark_folder)
-    df.to_csv(output_file)
+    df = pd.DataFrame(data=csv_data, index=benchmark_folder)
+    df.to_csv(csv_file)
 
-def noise_simulation(folder):
-    pass
+    writer = open(pickle_file, 'wb')
+    pickle.dump(pkl_data, writer)
+    writer.close()
+
+def merge_pickles(output_file, *input_files):
+    all_data = {}
+    dict_array = []
+    for f in input_files:
+        reader = open(f, 'rb')
+        d = pickle.load(reader)
+        reader.close()
+        dict_array.append(d)
+    all_keys = set(dict_array[0].keys()).intersection(*[set(d.keys()) for d in dict_array[1:]])
+    for i in range(len(dict_array)):
+        f = input_files[i]
+        src = f[0:f.index('.pkl')] 
+        d = dict_array[i]
+        filtered_dict = {}
+        for k in all_keys:
+            filtered_dict[k] = d[k]
+        all_data[src] = filtered_dict
+    writer = open(output_file, 'wb')
+    pickle.dump(all_data, writer)
+    writer.close()
 
 def _sabre_route(circ, arch_file):
     backend = read_arch_file(arch_file)
