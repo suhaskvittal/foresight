@@ -12,6 +12,7 @@ from fs_noise import google_sycamore_noise_model
 IBM_TOKYO = read_arch_file('../arch/ibm_tokyo.arch')
 GOOGLE_SYCAMORE = read_arch_file('../arch/google_weber.arch')
 RIGETTI_ASPEN9 = read_arch_file('../arch/rigetti_aspen9.arch')
+GRID100 = read_arch_file('../arch/100grid.arch')
 GRID500 = read_arch_file('../arch/500grid.arch')
 
 def batch1():
@@ -28,29 +29,11 @@ def batch1():
     _foresight = lambda x,y: _foresight_route(x,y,foresight)
 
     benchmark_circuits(
-        '../benchmarks/mapped_circuits/ibm_tokyo',
-        '../arch/ibm_tokyo.arch',
-        'sabre',
-        _sabre_route
-    )
-    benchmark_circuits(
         '../benchmarks/mapped_circuits/google_sycamore',
         '../arch/google_weber.arch',
         'foresight',
         _foresight,
         runs=1
-    )
-    benchmark_circuits(
-        '../benchmarks/mapped_circuits/rigetti_aspen9',
-        '../arch/rigetti_aspen9.arch',
-        'astar',
-        _astar_route
-    )
-    benchmark_circuits(
-        '../benchmarks/mapped_circuits/rigetti_aspen9',
-        '../arch/rigetti_aspen9.arch',
-        'tket',
-        _tket_route
     )
 
 def batch2():
@@ -67,29 +50,11 @@ def batch2():
     _foresight = lambda x,y: _foresight_route(x,y,foresight)
 
     benchmark_circuits(
-        '../benchmarks/mapped_circuits/google_sycamore',
-        '../arch/google_weber.arch',
-        'sabre',
-        _sabre_route
-    )
-    benchmark_circuits(
         '../benchmarks/mapped_circuits/rigetti_aspen9',
         '../arch/rigetti_aspen9.arch',
         'foresight',
         _foresight,
         runs=1,
-    )
-    benchmark_circuits(
-        '../benchmarks/mapped_circuits/ibm_tokyo',
-        '../arch/ibm_tokyo.arch',
-        'astar',
-        _astar_route
-    )
-    benchmark_circuits(
-        '../benchmarks/mapped_circuits/ibm_tokyo',
-        '../arch/ibm_tokyo.arch',
-        'tket',
-        _tket_route
     )
 
 def batch3():
@@ -106,24 +71,78 @@ def batch3():
     _foresight = lambda x,y: _foresight_route(x,y,foresight)
 
     benchmark_circuits(
-        '../benchmarks/mapped_circuits/rigetti_aspen9',
-        '../arch/rigetti_aspen9.arch',
-        'sabre',
-        _sabre_route
-    )
-    benchmark_circuits(
         '../benchmarks/mapped_circuits/ibm_tokyo',
         '../arch/ibm_tokyo.arch',
         'foresight',
         _foresight,
         runs=1
     )
+
+def batch4():
+    benchmark_circuits(
+        '../benchmarks/mapped_circuits/ibm_tokyo',
+        '../arch/ibm_tokyo.arch',
+        'sabre',
+        _sabre_route
+    )
+
+def batch5():
+    benchmark_circuits(
+        '../benchmarks/mapped_circuits/google_sycamore',
+        '../arch/google_weber.arch',
+        'sabre',
+        _sabre_route
+    )
+
+def batch6():
+    benchmark_circuits(
+        '../benchmarks/mapped_circuits/rigetti_aspen9',
+        '../arch/rigetti_aspen9.arch',
+        'sabre',
+        _sabre_route
+    )
+
+def batch7():
+    benchmark_circuits(
+        '../benchmarks/mapped_circuits/rigetti_aspen9',
+        '../arch/rigetti_aspen9.arch',
+        'astar',
+        _astar_route
+    )
+
+def batch8():
+    benchmark_circuits(
+        '../benchmarks/mapped_circuits/ibm_tokyo',
+        '../arch/ibm_tokyo.arch',
+        'astar',
+        _astar_route
+    )
+
+def batch9():
     benchmark_circuits(
         '../benchmarks/mapped_circuits/google_sycamore',
         '../arch/google_weber.arch',
         'astar',
         _astar_route
     )
+
+def batch10():
+    benchmark_circuits(
+        '../benchmarks/mapped_circuits/rigetti_aspen9',
+        '../arch/rigetti_aspen9.arch',
+        'tket',
+        _tket_route
+    )
+
+def batch11():
+    benchmark_circuits(
+        '../benchmarks/mapped_circuits/ibm_tokyo',
+        '../arch/ibm_tokyo.arch',
+        'tket',
+        _tket_route
+    )
+
+def batch12():
     benchmark_circuits(
         '../benchmarks/mapped_circuits/google_sycamore',
         '../arch/google_weber.arch',
@@ -131,7 +150,7 @@ def batch3():
         _tket_route
     )
 
-def batch4():  # General sensitivity analysis
+def batch13():  # General sensitivity analysis
     # ForeSight: (delta, S) = (0, 64), (1, 64), (2, 64), (3, 64), (4, 64)
     #                       = (2, 4), (2, 8), (2, 16), (2, 32), (2, 64)
     def genforesight(slack, solution_cap):
@@ -147,17 +166,32 @@ def batch4():  # General sensitivity analysis
         for solution_cap in [4,8,16,32,64]:
             _foresight = genforesight(slack,solution_cap)
             foresight_table[(slack,solution_cap)] = _foresight
+    benchmark_circuits(
+        '../benchmarks/gensens',
+        '../arch/google_weber.arch',
+        'sabre',
+        _sabre_route
+    )
     for slack in [0,1,2,3,4]:
-        for solution_cap in [4,8,16,32,64]:
-            _foresight = foresight_table[(slack,solution_cap)]
-            benchmark_circuits(
-                '../benchmarks/gensens',
-                '../arch/google_weber.arch',
-                'fs_%d_%d' % (slack, solution_cap),
-                _foresight
-            )
+        _foresight = foresight_table[(slack,64)]
+        benchmark_circuits(
+            '../benchmarks/gensens',
+            '../arch/google_weber.arch',
+            'fs_%d_%d' % (slack, 64),
+            _foresight,
+            runs=1
+        )
+    for solution_cap in [4,8,16,32,64]:
+        _foresight = foresight_table[(2,solution_cap)]
+        benchmark_circuits(
+            '../benchmarks/gensens',
+            '../arch/google_weber.arch',
+            'fs_%d_%d' % (2, solution_cap),
+            _foresight,
+            runs=1
+        )
 
-def batch5():   # BV sensitivity analysis 1
+def batch14():   # Time, Memory sensitivity analysis
     def genforesight(slack, solution_cap):
         foresight = ForeSight(
             GOOGLE_SYCAMORE,
@@ -173,16 +207,17 @@ def batch5():   # BV sensitivity analysis 1
             foresight_table[(slack,solution_cap)] = _foresight
     for slack in [0,1,2,3,4]:
         for solution_cap in [4,8,16,32,64]:
+            print('slack = %d, solution_cap=%d' % (slack, solution_cap))
             _foresight = foresight_table[(slack,solution_cap)]
             benchmark_circuits(
-                '../benchmarks/bvsens1',
+                '../benchmarks/tmsens',
                 '../arch/google_weber.arch',
                 'fs_%d_%d' % (slack, solution_cap),
                 _foresight,
                 runs=1
             )
 
-def batch6():   # BV sensitivity analysis 2
+def batch15():   # BV sensitivity analysis
     foresight = ForeSight(
         GRID500,
         slack=2,
@@ -191,19 +226,20 @@ def batch6():   # BV sensitivity analysis 2
     )
     _foresight = lambda x,y: _foresight_route(x,y,foresight)
     benchmark_circuits(
-        '../benchmarks/bvsens2',
+        '../benchmarks/bvsens',
         '../arch/500grid.arch',
         'sabre',
         _sabre_route
     )
     benchmark_circuits(
-        '../benchmarks/bvsens2',
+        '../benchmarks/bvsens',
         '../arch/500grid.arch',
         'foresight',
-        _foresight
+        _foresight,
+        runs=1
     )
 
-def batch7():   # Noise simulation routing
+def batch16():   # Noise simulation routing
     _, cx_error_rates, sq_error_rates, ro_error_rates =\
         google_sycamore_noise_model(GOOGLE_SYCAMORE, '../arch/noisy/google_weber.noise')
     foresight_noise_unaware = ForeSight(
@@ -244,14 +280,12 @@ def batch7():   # Noise simulation routing
         runs=1
     )
 
-def batch8():   # SK Models routing
+def batch17():   # SK Models routing
     archs = ['../arch/google_weber.arch']
-    arch_names = ['google_sycamore']
     for (i,arch_file) in enumerate(archs):
-        print(arch_names[i])
         backend = read_arch_file(arch_file)
         benchmark_circuits(
-            '../benchmarks/skbench/%s' % arch_names[i],
+            '../benchmarks/qaoa/skmodels',
             arch_file,
             'sabre',
             _sabre_route
@@ -260,21 +294,19 @@ def batch8():   # SK Models routing
                 flags=FLAG_ASAP|FLAG_OPT_FOR_O3)
         _fs = lambda x,y: _foresight_route(x,y,foresight_asap)
         benchmark_circuits(
-            '../benchmarks/skbench/%s' % arch_names[i],
+            '../benchmarks/qaoa/skmodels',
             arch_file,
             'foresight_asap',
             _fs,
             runs=1
         )
 
-def batch9():
+def batch18():
     archs = ['../arch/google_weber.arch']
-    arch_names = ['google_sycamore']
     for (i,arch_file) in enumerate(archs):
-        print(arch_names[i])
         backend = read_arch_file(arch_file)
         benchmark_circuits(
-            '../benchmarks/irrbench/%s' % arch_names[i],
+            '../benchmarks/qaoa/3regular',
             arch_file,
             'sabre',
             _sabre_route
@@ -283,7 +315,29 @@ def batch9():
                 flags=FLAG_ASAP|FLAG_OPT_FOR_O3)
         _fs = lambda x,y: _foresight_route(x,y,foresight_asap)
         benchmark_circuits(
-            '../benchmarks/irrbench/%s' % arch_names[i],
+            '../benchmarks/qaoa/3regular',
+            arch_file,
+            'foresight_asap',
+            _fs,
+            runs=1
+        )
+
+
+def batch19():
+    archs = ['../arch/google_weber.arch']
+    for (i,arch_file) in enumerate(archs):
+        backend = read_arch_file(arch_file)
+        benchmark_circuits(
+            '../benchmarks/qaoa/irregular',
+            arch_file,
+            'sabre',
+            _sabre_route
+        )
+        foresight_asap = ForeSight(backend, slack=2, solution_cap=64,
+                flags=FLAG_ASAP|FLAG_OPT_FOR_O3)
+        _fs = lambda x,y: _foresight_route(x,y,foresight_asap)
+        benchmark_circuits(
+            '../benchmarks/qaoa/irregular',
             arch_file,
             'foresight_asap',
             _fs,

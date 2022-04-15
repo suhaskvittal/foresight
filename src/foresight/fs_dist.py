@@ -5,11 +5,10 @@
 
 import numpy as np
 
-def process_coupling_map(coupling_map, path_slack, edge_weights=None, noisy_weights=False):
+def process_coupling_map(coupling_map, path_slack, edge_weights=None):
     dist_array, next_array = _floyd_warshall(
         coupling_map,
         edge_weights=edge_weights,
-        noisy_weights=noisy_weights
     )   
     
     path_memoizer = {}
@@ -25,40 +24,27 @@ def process_coupling_map(coupling_map, path_slack, edge_weights=None, noisy_weig
                 next_array,
                 path_memoizer,
                 edge_weights=edge_weights,
-                noisy_weights=noisy_weights
             )
     return dist_array, paths_on_arch    
 
-def _floyd_warshall(coupling_map, edge_weights=None, noisy_weights=False):
+def _floyd_warshall(coupling_map, edge_weights=None):
     n = coupling_map.size()
-    if noisy_weights:
-        dist_array = [[1.0 for _ in range(n)] for _ in range(n)]
-    else:
-        dist_array = [[np.infty for _ in range(n)] for _ in range(n)]
+    dist_array = [[np.infty for _ in range(n)] for _ in range(n)]
     next_array = [[None for _ in range(n)] for _ in range(n)]
     # Perform initialization
     for (p0, p1) in coupling_map.get_edges():
         dist_array[p0][p1] = 1.0 if edge_weights is None else edge_weights[(p0, p1)]
         next_array[p0][p1] = p1
     for p in coupling_map.physical_qubits:
-        if noisy_weights:
-            dist_array[p][p] = 1.0
-        else:
-            dist_array[p][p] = 0.0
+        dist_array[p][p] = 0.0
         next_array[p][p] = p
     # DP step.
     for k in range(n):
         for i in range(n):
             for j in range(n):  
-                if noisy_weights:
-                    # Only take new path if probability of failure is less
-                    if dist_array[i][j] > 1-(1-dist_array[i][k])*(1-dist_array[k][j]):
-                        dist_array[i][j] = 1-(1-dist_array[i][k])*(1-dist_array[k][j])
-                        next_array[i][j] = next_array[i][k]
-                else:
-                    if dist_array[i][j] > dist_array[i][k] + dist_array[k][j]:
-                        dist_array[i][j] = dist_array[i][k] + dist_array[k][j]
-                        next_array[i][j] = next_array[i][k]
+                if dist_array[i][j] > dist_array[i][k] + dist_array[k][j]:
+                    dist_array[i][j] = dist_array[i][k] + dist_array[k][j]
+                    next_array[i][j] = next_array[i][k]
     return dist_array, next_array
 
 def _get_path(source, sink, next_array):
@@ -81,8 +67,7 @@ def _get_all_paths(
     dist_array, 
     next_array, 
     path_memoizer, 
-    edge_weights=None,
-    noisy_weights=False
+    edge_weights=None
 ):
     if (source, sink) in path_memoizer:
         shortest_path = path_memoizer[(source, sink)]
@@ -90,18 +75,16 @@ def _get_all_paths(
         shortest_path = _get_path(source, sink, next_array)
         path_memoizer[(source, sink)] = shortest_path
     paths = [shortest_path]
-    if slack <= 0 or len(shortest_path) == 0:
+    if slack < 0 or len(shortest_path) == 0:
         return paths  # We are done. 
     neighbor_used_in_path = shortest_path[0][1]
+    antineighbor_used_in_path = shortest_path[-1][0]
     for p in coupling_map.neighbors(source):
         if p == neighbor_used_in_path:
             continue
         base_edge = (source, p)
         edge_length = 1.0 if edge_weights is None else edge_weights[base_edge]
-        if noisy_weights:
-            lhs = 1-(1-dist_array[p][sink])*(1-edge_length)
-        else:
-            lhs = dist_array[p][sink] + edge_length
+        lhs = dist_array[p][sink] + edge_length
         rhs = dist_array[source][sink] + slack
         if lhs < rhs:
             incomplete_slack_paths = _get_all_paths(
@@ -118,5 +101,27 @@ def _get_all_paths(
                 base_path = [base_edge]
                 base_path.extend(path)
                 paths.append(base_path)
+    for p in coupling_map.neighbors(sink):
+        if p == antineighbor_used_in_path:
+            continue
+        base_edge = (p, sink)
+        edge_length = 1.0 if edge_weights is None else edge_weights[base_edge]
+        lhs = dist_array[source][p] + edge_length
+        rhs = dist_array[source][sink] + slack
+        if lhs < rhs:
+            incomplete_slack_paths = _get_all_paths(
+                source,
+                p,
+                coupling_map,
+                slack - lhs,
+                dist_array,
+                next_array,
+                path_memoizer,
+                edge_weights=edge_weights
+            )
+            for path in incomplete_slack_paths:
+                path_copy = path.copy()
+                path_copy.append(base_edge)
+                paths.append(path_copy)
     return paths
 

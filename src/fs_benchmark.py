@@ -36,7 +36,7 @@ import pickle
 BENCHMARK_PATH = '../benchmarks'
 RUNS=5
     
-def qiskitopt3_layout_pass(coupling_map, routing_pass=None):
+def qiskitopt3_layout_pass(coupling_map, routing_pass=None, do_unroll=True):
     _unroll3q = [
         UnitarySynthesis(
             G_QISKIT_GATE_SET,
@@ -93,7 +93,8 @@ def qiskitopt3_layout_pass(coupling_map, routing_pass=None):
     pm = PassManager()
     pm.append(_unroll3q)
     pm.append(_reset+_meas)
-    pm.append(_unroll)
+    if do_unroll:
+        pm.append(_unroll)
     pm.append(_choose_layout_0, condition=_choose_layout_condition)
     pm.append(_choose_layout_1, condition=_trivial_not_perfect)
     pm.append(_choose_layout_2, condition=_csp_not_found_match)
@@ -118,7 +119,8 @@ def generate_benchmarks_for_backend(arch_file, backend_name,
 
     benchmark_files = [s for s in os.listdir('%s/base' % BENCHMARK_PATH)\
                             if s.endswith('.qasm')]
-    layout_pass = qiskitopt3_layout_pass(coupling_map)
+    layout_pass_with_unroll = qiskitopt3_layout_pass(coupling_map)
+    layout_pass_without_unroll = qiskitopt3_layout_pass(coupling_map, do_unroll=False)
     for qasm_file in benchmark_files:
         print(qasm_file)
         circ = QuantumCircuit.from_qasm_file('%s/base/%s' % (BENCHMARK_PATH,qasm_file))
@@ -126,7 +128,10 @@ def generate_benchmarks_for_backend(arch_file, backend_name,
             continue
         if 'cx' in circ.count_ops() and circ.count_ops()['cx'] > 10000:
             continue
-        mapped_circ = layout_pass.run(circ)
+        if 'qft' in qasm_file:
+            mapped_circ = layout_pass_without_unroll.run(circ)
+        else:
+            mapped_circ = layout_pass_with_unroll.run(circ)
         if 'cx' in mapped_circ.count_ops() and mapped_circ.count_ops()['cx'] > 10000:
             continue
         qasm_name = qasm_file[:qasm_file.index('.qasm')]
@@ -234,11 +239,11 @@ def insertion_analysis(output_file):
     pickle.dump(data, writer)
     writer.close()
 
-BVSENS1 = [
-    'bv_n50.qasm'
+TMSENS = [
+    'vqe_n8.qasm'
 ]
 
-BVSENS2 = [
+BVSENS = [
     'bv_n100.qasm',
     'bv_n200.qasm',
     'bv_n500.qasm'
@@ -268,37 +273,8 @@ NOISEBENCH = [
     'qpe_n9.qasm'
 ]
 
-# Sherrington-Kirkpatrik QAOA benchmarks
-SKBENCH = [
-    'SK_10_1.qasm',
-    'SK_11_1.qasm',
-    'SK_12_1.qasm',
-    'SK_13_1.qasm',
-    'SK_14_1.qasm',
-    'SK_15_1.qasm',
-    'SK_16_1.qasm',
-    'SK_17_1.qasm',
-    'SK_18_1.qasm'
-]
-
-# 3-regular QAOA benchmarks
-TREGBENCH = [
-    
-]
-
-# Irregular QAOA benchmarks
-IRRBENCH = [
-    'ba_10_1_1.qasm',
-    'ba_15_1_1.qasm',
-    'ba_20_1_1.qasm',
-    'ba_25_1_1.qasm',
-    'ba_30_1_1.qasm',
-    'ba_40_1_1.qasm',
-    'ba_50_1_1.qasm'
-]
-
 def generate_sens_benchmarks(sens_folder, circuits, arch_file,
-        mapped_circ_name=None, routing_pass=None, reset=False
+        base_folder='base', mapped_circ_name=None, routing_pass=None, reset=False
 ):
     if mapped_circ_name is None:
         mapped_circ_name = 'base_mapping'
@@ -311,9 +287,14 @@ def generate_sens_benchmarks(sens_folder, circuits, arch_file,
         os.system('rm -rf %s' % base_path)
         os.mkdir('%s' % base_path)
     layout_pass = qiskitopt3_layout_pass(coupling_map)
+
+    if circuits is None:
+        circuits = [f for f in os.listdir(os.path.join(BENCHMARK_PATH, base_folder)) 
+                    if f.endswith('.qasm')]
+
     for qasm_file in circuits:
         print(qasm_file)
-        circ = QuantumCircuit.from_qasm_file('%s/base/%s' % (BENCHMARK_PATH, qasm_file)) 
+        circ = QuantumCircuit.from_qasm_file('%s/%s/%s' % (BENCHMARK_PATH, base_folder, qasm_file)) 
         mapped_circ = layout_pass.run(circ)
         if not os.path.exists('%s/%s' % (base_path,qasm_file)):
             os.mkdir('%s/%s' % (base_path,qasm_file))
@@ -322,7 +303,7 @@ def generate_sens_benchmarks(sens_folder, circuits, arch_file,
         writer.write(mapped_qasm)
         writer.close()
 
-def benchmark_circuits(folder, arch_file, router_name, routing_func, runs=5):
+def benchmark_circuits(folder, arch_file, router_name, routing_func, runs=5, memory=False):
     backend = read_arch_file(arch_file)
     benchmark_folders = [d for d in os.listdir(folder) if os.path.isdir(os.path.join(folder, d))]
 
@@ -347,12 +328,15 @@ def benchmark_circuits(folder, arch_file, router_name, routing_func, runs=5):
         for r in range(runs):
             circ = base_circ.copy()
             # Benchmark here
-            tracemalloc.start(1)
+            if memory:
+                tracemalloc.start(1)
+                routing_func(circ,arch_file)  # Do not save output.
+                _, peak_mem = tracemalloc.get_traced_memory()
+                peak_mem -= tracemalloc.get_tracemalloc_memory()
+                tracemalloc.stop()
             start = time.time()
             output_circ = routing_func(circ, arch_file)
             end = time.time()
-            _, peak_mem = tracemalloc.get_traced_memory()
-            tracemalloc.stop()
             # Transpile circuit with O0 to basis gate set.
             output_circ = transpile(
                 output_circ,
@@ -379,7 +363,8 @@ def benchmark_circuits(folder, arch_file, router_name, routing_func, runs=5):
                     best_circ = output_circ
             # Record data
             time_array.append((end - start) * 1000)  # (end-start) is in seconds -- want in ms
-            memory_array.append(peak_mem)  # peak_mem is in bytes
+            if memory:
+                memory_array.append(peak_mem)  # peak_mem is in bytes
         # Print out data to stdout
         if 'cx' not in best_circ.count_ops():
             best_cnots = 0
@@ -406,7 +391,7 @@ def benchmark_circuits(folder, arch_file, router_name, routing_func, runs=5):
         writer.close()
 
 BASE_COMPILERS=['sabre','foresight','astar']
-def compile_data(folder, arch_file, csv_file, pickle_file, compilers=BASE_COMPILERS):
+def compile_data(folder, arch_file, csv_file, pickle_file, compilers=BASE_COMPILERS, use_O3=True):
     benchmark_folder = [d for d in os.listdir(folder) if os.path.isdir(os.path.join(folder, d))]
     csv_data = defaultdict(list)
     pkl_data = {}
@@ -466,17 +451,22 @@ def compile_data(folder, arch_file, csv_file, pickle_file, compilers=BASE_COMPIL
             original_circ = QuantumCircuit.from_qasm_file(
                         os.path.join(bench_path, '%s_circ.qasm' % cat))
             try:
-                trans_circ = transpile(
-                    original_circ,
-                    basis_gates=G_QISKIT_GATE_SET,
-                    coupling_map=backend,
-                    layout_method='trivial',
-                    routing_method='none',
-                    optimization_level=3
-                )
+                if use_O3:
+                    trans_circ = transpile(
+                        original_circ,
+                        basis_gates=G_QISKIT_GATE_SET,
+                        coupling_map=backend,
+                        layout_method='trivial',
+                        routing_method='none',
+                        optimization_level=3
+                    )
+                else:
+                    trans_circ = original_circ
             except:
                 trans_circ = original_circ
-            if 'cx' not in trans_circ.count_ops():
+            if trans_circ.size() == 0:
+                tc_cnots = np.inf  # invalid circuit
+            elif 'cx' not in trans_circ.count_ops():
                 tc_cnots = 0
             else:
                 tc_cnots = trans_circ.count_ops()['cx']
@@ -514,6 +504,40 @@ def merge_pickles(output_file, *input_files):
         all_data[src] = filtered_dict
     writer = open(output_file, 'wb')
     pickle.dump(all_data, writer)
+    writer.close()
+
+def merge_noise_sim_pickles(output_file):
+    base_path = os.path.join(BENCHMARK_PATH, 'noise')
+    benchmarks = [d for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path,d))]
+
+    data = {}
+    for subfolder in benchmarks:
+        print(subfolder)
+        counts_file = '%s/%s/counts.pkl' % (base_path, subfolder)
+        if not os.path.exists(counts_file):
+            continue
+        try:
+            reader = open(counts_file, 'rb')
+            counts = pickle.load(reader)
+            reader.close()
+        except:
+            continue
+        # Read the qasm files
+        for cat in ['sabre', 'foresight', 'noisy_foresight']:
+            circ = QuantumCircuit.from_qasm_file(
+                        '%s/%s/%s_circ.qasm' % (base_path, subfolder, cat))
+            if 'cx' not in circ.count_ops():
+                cnots = 0
+            else:
+                cnots = circ.count_ops()['cx']
+            print('\t%s fidelity: %f' % (cat, counts[cat]['fidelity']))
+            print('\t%s ist: %f' % (cat, counts[cat]['ist']))
+            print('\t%s cnots: %d' % (cat, cnots))
+            counts[cat]['cnots'] = cnots
+
+        data[subfolder] = counts
+    writer = open(output_file, 'wb')
+    pickle.dump(data, writer)
     writer.close()
 
 def _sabre_route(circ, arch_file):
@@ -554,10 +578,10 @@ from pytket import OpType
 from pytket.circuit import Qubit as TketQubit
 from pytket.circuit import Node as TketNode
 from pytket.qasm import circuit_from_qasm_str, circuit_to_qasm_str
-#from pytket.architecture import Architecture
-#from pytket.placement import Placement
-from pytket.routing import Architecture
-from pytket.routing import Placement
+from pytket.architecture import Architecture
+from pytket.placement import Placement
+#from pytket.routing import Architecture
+#from pytket.routing import Placement
 from pytket.transform import CXConfigType
 import pytket.passes
 

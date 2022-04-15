@@ -221,14 +221,24 @@ class ForeSight(TransformationPass):
                     continue
                 # Apply Qiskit O3 to the test dag
                 test_circ = dag_to_circuit(test_dag)
-                test_circ = transpile(
-                    test_circ,
-                    coupling_map=self.coupling_map,
-                    basis_gates=G_QISKIT_GATE_SET,
-                    layout_method='trivial',
-                    routing_method='none',
-                    optimization_level=3
-                )
+                try:
+                    test_circ = transpile(
+                        test_circ,
+                        coupling_map=self.coupling_map,
+                        basis_gates=G_QISKIT_GATE_SET,
+                        layout_method='trivial',
+                        routing_method='none',
+                        optimization_level=3
+                    )
+                except:
+                    test_circ = transpile(
+                        test_circ,
+                        coupling_map=self.coupling_map,
+                        basis_gates=G_QISKIT_GATE_SET,
+                        layout_method='trivial',
+                        routing_method='none',
+                        optimization_level=0
+                    )
                 test_dag = circuit_to_dag(test_circ)
                 cnots = test_dag.count_ops()['cx']
                 depth = test_dag.depth()
@@ -543,9 +553,7 @@ class ForeSight(TransformationPass):
             next_layer = []
             had_2q_gate = False
             for node in curr_layer:
-                if node in completed_nodes:
-                    continue
-                if i >= 0:
+                if i >= 0 and node not in completed_nodes:
                     # Only keep gates that have both qubits unused.
                     if len(node.qargs) == 1 and self.noise_aware:
                         # Only consider such gates in noise aware mode.
@@ -560,8 +568,9 @@ class ForeSight(TransformationPass):
                     else:
                         pass
                 for s in self._successors(node):
-                    pred_table[s] += 1
-                    incremented.append(s)
+                    if node not in completed_nodes:
+                        pred_table[s] += 1
+                        incremented.append(s)
                     if pred_table[s] == len(s.qargs):
                         next_layer.append(s)
             if i < 0 or had_2q_gate:
