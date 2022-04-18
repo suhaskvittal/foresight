@@ -477,7 +477,10 @@ def compile_data(folder, arch_file, csv_file, pickle_file, compilers=BASE_COMPIL
             pkl_data[subfolder][cat]['final depth O3'] = tc_depth
             pkl_data[subfolder][cat]['mapped qasm'] = original_circ.qasm()
             pkl_data[subfolder][cat]['final qasm'] = trans_circ.qasm()
-            print('\transpiled cnots = %d, depth = %d' % (tc_cnots-base_cnots, tc_depth))
+            if tc_cnots == np.inf:
+                print('\tinvalid circuit')
+            else:
+                print('\ttranspiled cnots = %d, depth = %d' % (tc_cnots-base_cnots, tc_depth))
     df = pd.DataFrame(data=csv_data, index=benchmark_folder)
     df.to_csv(csv_file)
 

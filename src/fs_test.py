@@ -54,13 +54,13 @@ if __name__ == '__main__':
 #    layout_pass = qiskitopt3_layout_pass(coupling_map,
 #        routing_pass=ForeSight(coupling_map=coupling_map,slack=2,solution_cap=1,flags=FLAG_ASAP))
 #    circ1 = layout_pass.run(circ)
-    layout_pass = qiskitopt3_layout_pass(coupling_map, do_unroll=True)
-    circ2 = layout_pass.run(circ)
+#    layout_pass = qiskitopt3_layout_pass(coupling_map, do_unroll=True)
+#    circ2 = layout_pass.run(circ)
 
     start = time.time()
-    fs_circ = foresight.run(circ2)
+    fs_circ = foresight.run(circ)
     end = time.time()
-    sabre_circ = sabre.run(circ2)
+    sabre_circ = sabre.run(circ)
 
     print('foresight time taken:', (end-start)*1000)
 

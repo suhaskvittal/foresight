@@ -101,27 +101,27 @@ def _get_all_paths(
                 base_path = [base_edge]
                 base_path.extend(path)
                 paths.append(base_path)
-    for p in coupling_map.neighbors(sink):
-        if p == antineighbor_used_in_path:
-            continue
-        base_edge = (p, sink)
-        edge_length = 1.0 if edge_weights is None else edge_weights[base_edge]
-        lhs = dist_array[source][p] + edge_length
-        rhs = dist_array[source][sink] + slack
-        if lhs < rhs:
-            incomplete_slack_paths = _get_all_paths(
-                source,
-                p,
-                coupling_map,
-                slack - lhs,
-                dist_array,
-                next_array,
-                path_memoizer,
-                edge_weights=edge_weights
-            )
-            for path in incomplete_slack_paths:
-                path_copy = path.copy()
-                path_copy.append(base_edge)
-                paths.append(path_copy)
+#    for p in coupling_map.neighbors(sink):
+#        if p == antineighbor_used_in_path:
+#            continue
+#        base_edge = (p, sink)
+#        edge_length = 1.0 if edge_weights is None else edge_weights[base_edge]
+#        lhs = dist_array[source][p] + edge_length
+#        rhs = dist_array[source][sink] + slack
+#        if lhs < rhs:
+#            incomplete_slack_paths = _get_all_paths(
+#                source,
+#                p,
+#                coupling_map,
+#                slack - lhs,
+#                dist_array,
+#                next_array,
+#                path_memoizer,
+#                edge_weights=edge_weights
+#            )
+#            for path in incomplete_slack_paths:
+#                path_copy = path.copy()
+#                path_copy.append(base_edge)
+#                paths.append(path_copy)
     return paths
 
