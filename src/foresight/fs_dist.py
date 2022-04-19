@@ -3,6 +3,11 @@
     date:   25 October 2021
 """
 
+from qiskit.circuit import QuantumRegister
+from qiskit.transpiler.layout import Layout
+
+from foresight.fs_hashed_layout import HashedLayout
+
 import numpy as np
 
 def process_coupling_map(coupling_map, path_slack, edge_weights=None):
@@ -11,11 +16,14 @@ def process_coupling_map(coupling_map, path_slack, edge_weights=None):
         edge_weights=edge_weights,
     )   
     
+    tmp_qreg = QuantumRegister(coupling_map.size())
+    trivial_layout_dict = {tmp_qreg[p]:p for p in coupling_map.physical_qubits}
+    
     path_memoizer = {}
     paths_on_arch = {}
     for p0 in coupling_map.physical_qubits:
         for p1 in coupling_map.physical_qubits:
-            paths_on_arch[(p0, p1)] = _get_all_paths(
+            paths = _get_all_paths(
                 p0,
                 p1,
                 coupling_map,
@@ -25,6 +33,25 @@ def process_coupling_map(coupling_map, path_slack, edge_weights=None):
                 path_memoizer,
                 edge_weights=edge_weights,
             )
+            layout_table = {}
+            for path in paths:
+                test_layout = Layout(input_dict=trivial_layout_dict)
+                score = 0
+                for (r0,r1) in path:
+                    test_layout.swap(r0,r1)
+                    if edge_weights is None:
+                        score += 1.0
+                    else:
+                        score += edge_weights[(r0,r1)]
+                hashed_layout = HashedLayout.from_layout(test_layout)
+                if hashed_layout not in layout_table:
+                    layout_table[hashed_layout] = (path, score)
+                else:
+                    _, min_score = layout_table[hashed_layout]
+                    if score < min_score:
+                        layout_table[hashed_layout] = (path, score)
+            paths_on_arch[(p0,p1)] = [layout_table[hl][0] for hl in layout_table]
+
     return dist_array, paths_on_arch    
 
 def _floyd_warshall(coupling_map, edge_weights=None):
@@ -86,7 +113,7 @@ def _get_all_paths(
         edge_length = 1.0 if edge_weights is None else edge_weights[base_edge]
         lhs = dist_array[p][sink] + edge_length
         rhs = dist_array[source][sink] + slack
-        if lhs < rhs:
+        if lhs <= rhs:
             incomplete_slack_paths = _get_all_paths(
                 p,
                 sink,
@@ -101,27 +128,27 @@ def _get_all_paths(
                 base_path = [base_edge]
                 base_path.extend(path)
                 paths.append(base_path)
-#    for p in coupling_map.neighbors(sink):
-#        if p == antineighbor_used_in_path:
-#            continue
-#        base_edge = (p, sink)
-#        edge_length = 1.0 if edge_weights is None else edge_weights[base_edge]
-#        lhs = dist_array[source][p] + edge_length
-#        rhs = dist_array[source][sink] + slack
-#        if lhs < rhs:
-#            incomplete_slack_paths = _get_all_paths(
-#                source,
-#                p,
-#                coupling_map,
-#                slack - lhs,
-#                dist_array,
-#                next_array,
-#                path_memoizer,
-#                edge_weights=edge_weights
-#            )
-#            for path in incomplete_slack_paths:
-#                path_copy = path.copy()
-#                path_copy.append(base_edge)
-#                paths.append(path_copy)
+    for p in coupling_map.neighbors(sink):
+        if p == antineighbor_used_in_path:
+            continue
+        base_edge = (p, sink)
+        edge_length = 1.0 if edge_weights is None else edge_weights[base_edge]
+        lhs = dist_array[source][p] + edge_length
+        rhs = dist_array[source][sink] + slack
+        if lhs <= rhs:
+            incomplete_slack_paths = _get_all_paths(
+                source,
+                p,
+                coupling_map,
+                slack - lhs,
+                dist_array,
+                next_array,
+                path_memoizer,
+                edge_weights=edge_weights
+            )
+            for path in incomplete_slack_paths:
+                path_copy = path.copy()
+                path_copy.append(base_edge)
+                paths.append(path_copy)
     return paths
 

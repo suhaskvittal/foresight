@@ -31,7 +31,7 @@ if __name__ == '__main__':
         coupling_map=coupling_map,
         slack=slack,
         solution_cap=solution_cap,
-        flags=FLAG_DEBUG | FLAG_ASAP# | FLAG_OPT_FOR_O3
+        flags=FLAG_DEBUG | FLAG_ALAP# | FLAG_OPT_FOR_O3
     )
     foresight = PassManager([
         TrivialLayout(coupling_map),
