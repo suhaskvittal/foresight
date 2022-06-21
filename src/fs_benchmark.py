@@ -10,6 +10,7 @@ from qiskit.transpiler.basepasses import AnalysisPass
 from qiskit.transpiler.passes import *
 from qiskit.compiler import transpile
 from qiskit.visualization import plot_histogram
+from qiskit.converters import circuit_to_dag, dag_to_circuit
 
 from timeit import default_timer as timer
 from copy import copy, deepcopy
@@ -176,6 +177,8 @@ def convergence_analysis(output_file):
                 sabre_circ,
                 basis_gates=G_QISKIT_GATE_SET,
                 coupling_map=backend,
+                layout_method='trivial',
+                routing_method='none',
                 optimization_level=0
             )
             if best_sabre_circ is None:
@@ -194,6 +197,8 @@ def convergence_analysis(output_file):
                 foresight_circ,
                 basis_gates=G_QISKIT_GATE_SET,
                 coupling_map=backend,
+                layout_method='trivial',
+                routing_method='none',
                 optimization_level=0
             )
             if best_foresight_circ is None:
@@ -240,7 +245,8 @@ def insertion_analysis(output_file):
     writer.close()
 
 TMSENS = [
-    'vqe_n8.qasm'
+    'bv_n50.qasm',
+    'bv_n100.qasm'
 ]
 
 BVSENS = [
@@ -303,7 +309,7 @@ def generate_sens_benchmarks(sens_folder, circuits, arch_file,
         writer.write(mapped_qasm)
         writer.close()
 
-def benchmark_circuits(folder, arch_file, router_name, routing_func, runs=5, memory=False):
+def benchmark_circuits(folder, arch_file, router_name, routing_func, runs=5, memory=True):
     backend = read_arch_file(arch_file)
     benchmark_folders = [d for d in os.listdir(folder) if os.path.isdir(os.path.join(folder, d))]
 
@@ -391,8 +397,13 @@ def benchmark_circuits(folder, arch_file, router_name, routing_func, runs=5, mem
         writer.close()
 
 BASE_COMPILERS=['sabre','foresight','astar']
-def compile_data(folder, arch_file, csv_file, pickle_file, compilers=BASE_COMPILERS, use_O3=True):
-    benchmark_folder = [d for d in os.listdir(folder) if os.path.isdir(os.path.join(folder, d))]
+def compile_data(folder, arch_file, csv_file, pickle_file, compilers=BASE_COMPILERS, 
+        use_O3=True, circuits=None):
+    if circuits is None:
+        benchmark_folder = [d for d in os.listdir(folder)
+                    if os.path.isdir(os.path.join(folder, d))]
+    else:
+        benchmark_folder = circuits
     csv_data = defaultdict(list)
     pkl_data = {}
     base_columns = ['cnots added', 'depth', 'time', 'memory', 'cnots added O3', 'depth O3']
@@ -616,3 +627,315 @@ def _tket_route(circ, arch_file):
         return QuantumCircuit.from_qasm_str(circuit_to_qasm_str(tket_circ))
     except:
         return QuantumCircuit(1,1)
+
+DATA_FOLDER_PATH = '../data/'
+DATA_BENCH_PATH = '%s/benchmarks' % DATA_FOLDER_PATH
+DATA_SENS_PATH = '%s/sensitivity' % DATA_FOLDER_PATH
+
+def compile_all_benchmarks(compilers=['sabre','foresight','tket','astar']):
+    compile_data('../benchmarks/mapped_circuits/ibm_tokyo',
+            '../arch/ibm_tokyo.arch', '../data/benchmarks/csv/ibm_tokyo.csv',
+            'ibm_tokyo.pkl', compilers=compilers, use_O3=True)
+    compile_data('../benchmarks/mapped_circuits/google_sycamore',
+            '../arch/google_sycamore.arch', '../data/benchmarks/csv/google_sycamore.csv',
+            'google_sycamore.pkl', compilers=compilers, use_O3=True)
+    compile_data('../benchmarks/mapped_circuits/rigetti_aspen9',
+            '../arch/rigetti_aspen9.arch', '../data/benchmarks/csv/rigetti_aspen9.csv',
+            'rigetti_aspen9.pkl', compilers=compilers, use_O3=True)
+    merge_pickles('benchmarks.pkl', 'ibm_tokyo.pkl', 'google_sycamore.pkl', 'rigetti_aspen9.pkl')
+    os.system('mv *.pkl ../data/benchmarks')
+
+def compile_all_sensitivity(tmsens=True, bvsens=True, gensens=True, ins=True, conv=True):
+    if tmsens:
+        tmsens_input_path = '%s/tmsens' % BENCHMARK_PATH
+        tmsens_csv_path = '%s/tmsens/csv/tmsens.csv' % DATA_SENS_PATH
+        tmsens_pkl_path = '%s/tmsens/tmsens.pkl' % DATA_SENS_PATH
+        tmsens_compilers = []
+        for d in [0,1,2,3,4]:
+            for s in [4,8,16,32,64]:
+                tmsens_compilers.append('fs_%d_%d' % (d,s))
+        compile_data(tmsens_input_path, '../arch/google_weber.arch',
+                tmsens_csv_path, tmsens_pkl_path, compilers=tmsens_compilers, use_O3=False)
+    if bvsens:    
+        bvsens_input_path = '%s/bvsens' % BENCHMARK_PATH
+        bvsens_csv_path = '%s/bvsens/csv/bvsens.csv' % DATA_SENS_PATH
+        bvsens_pkl_path = '%s/bvsens/bvsens.pkl' % DATA_SENS_PATH
+        compile_data(bvsens_input_path, '../arch/500grid.arch', 
+                bvsens_csv_path, bvsens_pkl_path, compilers=['sabre','foresight'], use_O3=False)
+    if gensens:
+        gensens_input_path = '%s/gensens' % BENCHMARK_PATH
+        gensens_csv_path = '%s/gensens/csv/gensens.csv' % DATA_SENS_PATH
+        gensens_pkl_path = '%s/gensens/gensens.pkl' % DATA_SENS_PATH
+        gensens_compilers = []
+        for s in [4,8,16,32,64]:
+            gensens_compilers.append('fs_%d_%d' % (2,s))
+        gensens_compilers.append('sabre')
+        compile_data(gensens_input_path, '../arch/google_weber.arch',
+                gensens_csv_path, gensens_pkl_path, compilers=gensens_compilers, use_O3=False)
+    if ins:
+        insertion_analysis('%s/foresight_vs_sabre_swpins.pkl' % DATA_SENS_PATH)
+    if conv:
+        convergence_analysis('%s/foresight_vs_sabre_100iter.pkl' % DATA_SENS_PATH)
+
+def compile_noise_sims():
+    merge_noise_sim_pickles('../data/noisesim/simulations.pkl')
+
+TOQM_CMP_CIRCUITS = [
+    'square_root_7.qasm',
+    'wim_266.qasm',
+    'sf_276.qasm',
+    '4_49_16.qasm'
+]
+
+CMP_CIRCUITS = [
+    'cycle10_2_110.qasm',
+    'adr4_197.qasm',
+    'hwb4_49.qasm',
+    'vqe_n8.qasm',
+    'sym9_148.qasm'
+]
+
+def compile_for_analytical_model(output_file):
+    base_path = '%s/mapped_circuits/google_sycamore' % BENCHMARK_PATH
+    backend = read_arch_file('../arch/google_sycamore.arch')
+    data = {}
+    for circ_name in TOQM_CMP_CIRCUITS:
+        base_circ = QuantumCircuit.from_qasm_file(
+                '%s/%s/base_mapping.qsm' % (base_path, circ_name))
+        data[circ_name] = {
+            'qasm': base_circ.qasm(),
+            'base cnots': base_circ.count_ops()['cx'],
+            'base depth': base_circ.depth()
+        }
+        for policy in ['sabre','foresight','astar','tket','toqm']:
+            circ = QuantumCircuit.from_qasm_file(
+                    '%s/%s/%s_circ.qasm' % (base_path, circ_name, policy))
+            circ = transpile(circ,
+                    basis_gates=G_QISKIT_GATE_SET,
+                    coupling_map=backend,
+                    layout_method='trivial',
+                    routing_method='none',
+                    optimization_level=3)
+            data[circ_name][policy] = {
+                'qasm': circ.qasm(),
+                'cnots added': circ.count_ops()['cx'],
+                'final depth': circ.depth()
+            }
+    writer = open(output_file, 'wb')
+    pickle.dump(data, writer)
+    writer.close()
+
+def compile_toqm():
+    arch_names = ['ibm_tokyo', 'google_sycamore', 'rigetti_aspen9']
+
+    for arch_name in arch_names:
+        toqm_input_path = '%s/mapped_circuits/%s' % (BENCHMARK_PATH, arch_name)
+        toqm_csv_path = '%s/toqm/csv/toqm_%s.csv' % (DATA_BENCH_PATH, arch_name)
+        toqm_pkl_path = '%s/toqm/toqm_%s.pkl' % (DATA_BENCH_PATH, arch_name)
+
+        compile_data(toqm_input_path, '../arch/%s.arch' % arch_name,
+                toqm_csv_path, toqm_pkl_path, compilers=['sabre', 'foresight', 'toqm'], 
+                use_O3=True, circuits=TOQM_CMP_CIRCUITS)
+
+def compare_eps_sycamore(compilers, circuits):
+    base_path = '%s/mapped_circuits/google_sycamore' % BENCHMARK_PATH
+    # Noise parameters from Weber (some estimated)
+    G1Q_TIME = 25  # ns
+    CX_TIME = 32
+    MEAS_TIME = 4000
+    T1 = 15000
+    T2 = T1*0.5
+    # Read noise file.
+    reader = open('../arch/noisy/google_weber.noise', 'r')
+    num_qubits = int(reader.readline())
+    g_2q_err = {'cx':{}}
+    g_2q_time = {'cx':{}}
+    g_1q_err = {g:[0 for _ in range(num_qubits)] for g in ['u1', 'u2', 'u3']}
+    g_1q_time = {g:[0 for _ in range(num_qubits)] for g in ['u1', 'u2', 'u3']}
+    prob_m1_g0 = [0 for _ in range(num_qubits)]
+    prob_m0_g1 = [0 for _ in range(num_qubits)]
+    meas_time = [0 for _ in range(num_qubits)]
+    coh_t1 = [0 for _ in range(num_qubits)]
+    coh_t2 = [0 for _ in range(num_qubits)]
+    for _ in range(num_qubits):
+        split_line = reader.readline().split(' ')
+        q, e_1q, pm1g0, pm0g1 = int(split_line[0]), float(split_line[1]),\
+                float(split_line[2]), float(split_line[3])
+        for g in g_1q_err:
+            g_1q_err[g][q] = e_1q
+            g_1q_time[g][q] = G1Q_TIME
+        prob_m1_g0[q] = pm1g0
+        prob_m0_g1[q] = pm0g1
+        meas_time[q] = MEAS_TIME
+        coh_t1[q] = T1
+        coh_t2[q] = T2
+    line = reader.readline()  # now read until the end of the file
+    while line != '':
+        split_line = line.split(' ')
+        q1, q2, e_2q = int(split_line[0]), int(split_line[1]), float(split_line[2])
+        g_2q_err['cx'][(q1,q2)] = e_2q
+        g_2q_err['cx'][(q2,q1)] = e_2q
+        g_2q_time['cx'][(q1,q2)] = CX_TIME
+        g_2q_time['cx'][(q2,q1)] = CX_TIME
+        line = reader.readline()
+    reader.close()
+    # Compute EPS for each circuit
+    backend = read_arch_file('../arch/google_sycamore.arch')
+    for circ_name in circuits:
+        base_circ = QuantumCircuit.from_qasm_file(
+                    '%s/%s/base_mapping.qasm' % (base_path, circ_name))
+        base_cnots = base_circ.count_ops()['cx']
+        print(circ_name)
+        for policy in compilers:
+            circ = QuantumCircuit.from_qasm_file(
+                    '%s/%s/%s_circ.qasm' % (base_path, circ_name, policy))
+            circ = transpile(circ,
+                    basis_gates=G_QISKIT_GATE_SET,
+                    coupling_map=backend,
+                    layout_method='trivial',
+                    routing_method='none',
+                    optimization_level=3)
+            eps = 1.0
+            logeps = 0.0
+            avg_cx_error_rate = 0.0
+            avg_sq_error_rate = 0.0
+            avg_ro_error_rate = 0.0
+            num_cx_gates = 0
+            num_sq_gates = 0
+            num_ro_gates = 0
+            for (ins, qargs, cargs) in circ:
+                if ins.name == 'measure':
+                    q = qargs[0].index
+                    eps *= 1.0 - np.mean([prob_m1_g0[q], prob_m0_g1[q]])
+                    logeps += -np.log(1.0 - np.mean([prob_m1_g0[q], prob_m0_g1[q]]))
+
+                    num_ro_gates += 1
+                    avg_ro_error_rate += np.mean([prob_m1_g0[q], prob_m0_g1[q]])
+                elif len(qargs) == 2:
+                    q0, q1 = qargs[0].index, qargs[1].index
+                    eps *= 1.0 - g_2q_err[ins.name][(q0,q1)]
+                    logeps += -np.log(1.0 - g_2q_err[ins.name][(q0,q1)])
+
+                    num_cx_gates += 1
+                    avg_cx_error_rate += g_2q_err[ins.name][(q0,q1)]
+                else:
+                    q = qargs[0].index
+                    eps *= 1.0 - g_1q_err[ins.name][q]
+                    logeps += -np.log(1.0 - g_1q_err[ins.name][q])
+
+                    num_sq_gates += 1
+                    avg_sq_error_rate += g_1q_err[ins.name][q]
+            if num_ro_gates != 0:
+                avg_ro_error_rate /= num_ro_gates
+            if num_cx_gates != 0:
+                avg_cx_error_rate /= num_cx_gates
+            if num_sq_gates != 0:
+                avg_sq_error_rate /= num_sq_gates
+            time = 0.0
+            # Compute circuit time
+            dag = circuit_to_dag(circ)
+            active = set()
+            for layer in dag.layers():
+                layer_data = layer['graph']
+                max_time = G1Q_TIME
+                for node in layer_data.front_layer():
+                    if len(node.qargs) == 2:
+                        max_time = CX_TIME
+                time += max_time
+                for lst in layer['partition']:
+                    for q in lst:
+                        active.add(q)
+            eps *= np.exp(-time/T1)**len(active)
+            logeps += time/T1 * len(active)
+            print('\tcnots and depth for %s on %s: %d, %d' 
+                    % (policy, circ_name, circ.count_ops()['cx'], circ.depth()))
+            print('\t\tcx overhead: %d' % (circ.count_ops()['cx']-base_cnots))
+            print('\t\tlatency: %d' % time)
+            print('\t\tqubits used: %d' % len(active))
+            print('\t\tEPS: %.3e (%.3e)' % (eps, logeps))
+            print('\t\tMean SQ, CX, RO error rates: %f, %f, %f'\
+                    % (avg_sq_error_rate, avg_cx_error_rate, avg_ro_error_rate))
+
+def compare_eps_general(arch_name, compilers, circuits,
+        coh_t1=15000, cxtime=32, sqtime=25, cxerror=0.01, sqerror=0.001, roerror=0.02):
+    base_path = '%s/mapped_circuits/%s' % (BENCHMARK_PATH,arch_name)
+    # Compute EPS for each circuit
+    backend = read_arch_file('../arch/%s.arch' % arch_name)
+    for circ_name in circuits:
+        base_circ = QuantumCircuit.from_qasm_file(
+                    '%s/%s/base_mapping.qasm' % (base_path, circ_name))
+        base_cnots = base_circ.count_ops()['cx']
+        print(circ_name)
+        for policy in compilers:
+            circ = QuantumCircuit.from_qasm_file(
+                    '%s/%s/%s_circ.qasm' % (base_path, circ_name, policy))
+            circ = transpile(circ,
+                    basis_gates=G_QISKIT_GATE_SET,
+                    coupling_map=backend,
+                    layout_method='trivial',
+                    routing_method='none',
+                    optimization_level=3)
+            eps = 1.0
+            logeps = 0.0
+            num_cnots = circ.count_ops()['cx']
+            eps *= (1.0-cxerror)**num_cnots  # may underflow, logeps is better value
+            logeps += -np.log(1.0-cxerror)*num_cnots
+            # We can ignore single qubit and readout error: they will cancel out.
+            time = 0.0
+            # Compute circuit time
+            dag = circuit_to_dag(circ)
+            active = set()
+            for layer in dag.layers():
+                layer_data = layer['graph']
+                max_time = sqtime
+                for node in layer_data.front_layer():
+                    if len(node.qargs) == 2:
+                        max_time = cxtime
+                time += max_time
+                for lst in layer['partition']:
+                    for q in lst:
+                        active.add(q)
+            eps *= np.exp(-time*len(active)/coh_t1)
+            logeps += time/coh_t1 * len(active)
+            print('\tcnots and depth for %s on %s: %d, %d' 
+                    % (policy, circ_name, circ.count_ops()['cx'], circ.depth()))
+            print('\t\tcx overhead: %d' % (circ.count_ops()['cx']-base_cnots))
+            print('\t\tlatency: %d' % time)
+            print('\t\tqubits used: %d' % len(active))
+            print('\t\tEPS: %.3e (%.3e)' % (eps, logeps))
+
+def prob_of_success(pgate,Ng,n,depth,T1_time,pmeas=0.01,gate_duration=100):
+	'''
+	pgate-> gate error prob
+	pmeas-> measurement error prob	[Default 1%]
+	Ng   -> Number of CNOT gates	
+	n	 -> Number of Qubits in program
+	depth-> Number of gates in the critical path
+	gate duration -> 100 ns
+	T1_time -> T1 time in microseconds
+	'''
+
+	prob_no_gate_error = (1-pgate)**Ng
+	prob_no_meas_error = (1-pmeas)**n
+	prob_no_coherence_error = np.exp(-depth*gate_duration/(T1_time*1000))
+	prob_success = prob_no_gate_error * prob_no_meas_error * prob_no_coherence_error
+
+	return prob_success
+
+def compute_psuccess_ratio(cnot_error_rate_toqm,cnot_error_rate_fs,
+        Ng_toqm,Ng_fs,n,depth_toqm,depth_fs,T1,pmeas=0.01,gate_duration=100):
+	'''
+	cnot_error_rate -> gate error rate for cnot operations
+	Ng_toqm			-> Number of CNOTs in TOQM
+	Ng_fs			-> Number of CNOTs in ForeSight
+	n				-> Number of program qubits
+	depth_toqm 		-> Number of gates in the critical path for TOQM code
+	depth_fs 		-> Number of gates in the critical path for FS code
+	T1				-> Device T1 time
+	'''
+	psuccess_toqm = prob_of_success(pgate=cnot_error_rate_toqm,
+            Ng=Ng_toqm,n=n,depth=depth_toqm,T1_time=T1,pmeas=pmeas,gate_duration=gate_duration)
+	psuccess_fs = prob_of_success(pgate=cnot_error_rate_fs,
+            Ng=Ng_fs,n=n,depth=depth_fs,T1_time=T1,pmeas=pmeas,gate_duration=gate_duration)
+	
+	return psuccess_fs/psuccess_toqm

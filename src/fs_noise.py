@@ -63,6 +63,7 @@ def google_sycamore_noise_model(backend, noise_file, noise_factor=1.0):
         g_2q_time['cx'][(q1,q2)] = CX_TIME
         g_2q_time['cx'][(q2,q1)] = CX_TIME
         line = reader.readline()
+    reader.close()
     noise_model = _build_noise_model(
         num_qubits,
         sycamore,

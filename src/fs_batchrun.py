@@ -194,7 +194,7 @@ def batch13():  # General sensitivity analysis
 def batch14():   # Time, Memory sensitivity analysis
     def genforesight(slack, solution_cap):
         foresight = ForeSight(
-            GOOGLE_SYCAMORE,
+            GRID100,
             slack=slack,
             solution_cap=solution_cap,
             flags=FLAG_ALAP
@@ -211,7 +211,7 @@ def batch14():   # Time, Memory sensitivity analysis
             _foresight = foresight_table[(slack,solution_cap)]
             benchmark_circuits(
                 '../benchmarks/tmsens',
-                '../arch/google_weber.arch',
+                '../arch/100grid.arch',
                 'fs_%d_%d' % (slack, solution_cap),
                 _foresight,
                 runs=1
@@ -279,70 +279,6 @@ def batch16():   # Noise simulation routing
         _fs2,
         runs=1
     )
-
-def batch17():   # SK Models routing
-    archs = ['../arch/google_weber.arch']
-    for (i,arch_file) in enumerate(archs):
-        backend = read_arch_file(arch_file)
-        benchmark_circuits(
-            '../benchmarks/qaoa/skmodels',
-            arch_file,
-            'sabre',
-            _sabre_route
-        )
-        foresight_asap = ForeSight(backend, slack=2, solution_cap=64,
-                flags=FLAG_ASAP|FLAG_OPT_FOR_O3)
-        _fs = lambda x,y: _foresight_route(x,y,foresight_asap)
-        benchmark_circuits(
-            '../benchmarks/qaoa/skmodels',
-            arch_file,
-            'foresight_asap',
-            _fs,
-            runs=1
-        )
-
-def batch18():
-    archs = ['../arch/google_weber.arch']
-    for (i,arch_file) in enumerate(archs):
-        backend = read_arch_file(arch_file)
-        benchmark_circuits(
-            '../benchmarks/qaoa/3regular',
-            arch_file,
-            'sabre',
-            _sabre_route
-        )
-        foresight_asap = ForeSight(backend, slack=2, solution_cap=64,
-                flags=FLAG_ASAP|FLAG_OPT_FOR_O3)
-        _fs = lambda x,y: _foresight_route(x,y,foresight_asap)
-        benchmark_circuits(
-            '../benchmarks/qaoa/3regular',
-            arch_file,
-            'foresight_asap',
-            _fs,
-            runs=1
-        )
-
-
-def batch19():
-    archs = ['../arch/google_weber.arch']
-    for (i,arch_file) in enumerate(archs):
-        backend = read_arch_file(arch_file)
-        benchmark_circuits(
-            '../benchmarks/qaoa/irregular',
-            arch_file,
-            'sabre',
-            _sabre_route
-        )
-        foresight_asap = ForeSight(backend, slack=2, solution_cap=64,
-                flags=FLAG_ASAP|FLAG_OPT_FOR_O3)
-        _fs = lambda x,y: _foresight_route(x,y,foresight_asap)
-        benchmark_circuits(
-            '../benchmarks/qaoa/irregular',
-            arch_file,
-            'foresight_asap',
-            _fs,
-            runs=1
-        )
 
 if __name__ == '__main__':
     from sys import argv
