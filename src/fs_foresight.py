@@ -859,7 +859,10 @@ class ForeSight(TransformationPass):
         dist = 0.0
         num_ops = 0
         for (node, depth) in post_primary_layer_view:
-            depth_adjust = np.exp(-(depth/((self.mean_degree)**1.5))**2)
+            if self.alap_enabled:
+                depth_adjust = np.exp(-(depth/((self.mean_degree)**1.5))**2)
+            else:
+                depth_adjust = 0.5 if depth > 0 else 1.0
             if len(node.qargs) == 1 and self.noise_aware:
                 q = node.qargs[0]
                 p = test_layout[q]

@@ -27,6 +27,7 @@ class SolutionKernel:
         self.swap_count = swap_count
         self.expected_prob_success = expected_prob_success
         self.parent = parent
+
+        self.recent_cnots = {}
             
         self.swap_segments = [] if swap_segments is None else swap_segments 
-

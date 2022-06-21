@@ -31,7 +31,7 @@ if __name__ == '__main__':
         coupling_map=coupling_map,
         slack=slack,
         solution_cap=solution_cap,
-        flags=FLAG_DEBUG | FLAG_ALAP# | FLAG_OPT_FOR_O3
+        flags=FLAG_DEBUG | FLAG_ASAP# | FLAG_OPT_FOR_O3
     )
     foresight = PassManager([
         TrivialLayout(coupling_map),
@@ -51,11 +51,6 @@ if __name__ == '__main__':
         base_cnots = circ.count_ops()['cx']
     if 'measure' not in circ.count_ops():
         circ.measure_active()
-#    layout_pass = qiskitopt3_layout_pass(coupling_map,
-#        routing_pass=ForeSight(coupling_map=coupling_map,slack=2,solution_cap=1,flags=FLAG_ASAP))
-#    circ1 = layout_pass.run(circ)
-#    layout_pass = qiskitopt3_layout_pass(coupling_map, do_unroll=True)
-#    circ2 = layout_pass.run(circ)
 
     start = time.time()
     fs_circ = foresight.run(circ)
