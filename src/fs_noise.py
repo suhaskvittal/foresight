@@ -517,6 +517,9 @@ def get_evaluation_output(ideal_dist,real_dist,metric='fidelity'):
         eval_output = root_mean_square_error(ideal_dist,real_dist)
     return eval_output
 
+# Configurations: We have empirically found that:
+# ALAP ForeSight is generally best with parameters S=64, delta=mean cx error rate.
+# ASAP ForeSight is generally best with parameters S=64, delta=max cx error rate.
 
 if __name__ == '__main__':
     from sys import argv
@@ -539,9 +542,18 @@ if __name__ == '__main__':
         ro_error_rates=ro_error_rates,
         flags=base_flags
     )
+    cx_error_rate_list = [cx_error_rates[c] for c in cx_error_rates]
+    print('cx error mean: %f, min: %f, max: %f'\
+            % (np.mean(cx_error_rate_list), np.min(cx_error_rate_list), np.max(cx_error_rate_list)))
+    mean_cx_error_rate = np.mean(cx_error_rate_list)
+    min_cx_error_rate = np.min(cx_error_rate_list)
+    max_cx_error_rate = np.max(cx_error_rate_list)
     compiler_noise_aware = ForeSight(
         backend,
-        slack=0.01,
+#        slack=0.01,
+#        slack=min_cx_error_rate,
+#        slack=max_cx_error_rate,
+        slack=mean_cx_error_rate,
         solution_cap=64,
         cx_error_rates=cx_error_rates,
         sq_error_rates=sq_error_rates,

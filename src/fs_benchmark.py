@@ -279,6 +279,14 @@ NOISEBENCH = [
     'qpe_n9.qasm'
 ]
 
+Z3BENCH = [
+    'z4_268.qasm',
+    '4gt12-v0_86.qasm',
+    '4_49_16.qasm',
+    'mod10_171.qasm',
+    'alu-v2_32.qasm'
+]
+
 def generate_sens_benchmarks(sens_folder, circuits, arch_file,
         base_folder='base', mapped_circ_name=None, routing_pass=None, reset=False
 ):
@@ -627,6 +635,20 @@ def _tket_route(circ, arch_file):
         return QuantumCircuit.from_qasm_str(circuit_to_qasm_str(tket_circ))
     except:
         return QuantumCircuit(1,1)
+
+def _z3_route(circ, arch_file):
+    circ = RemoveBarriers()(circ)
+    circ = RemoveFinalMeasurements()(circ)
+    output_circ = QuantumCircuit(1,1)
+    try:
+        results = mqt.qmap.compile(
+                circ, arch_file, method='exact', initial_layout='identity')
+        results = results.json()
+        output_circ = QuantumCircuit.from_qasm_str(results['mapped_circuit']['qasm'])
+    except Exception as e:
+        print(e)
+    return output_circ
+
 
 DATA_FOLDER_PATH = '../data/'
 DATA_BENCH_PATH = '%s/benchmarks' % DATA_FOLDER_PATH

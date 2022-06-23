@@ -31,7 +31,7 @@ if __name__ == '__main__':
         coupling_map=coupling_map,
         slack=slack,
         solution_cap=solution_cap,
-        flags=FLAG_DEBUG | FLAG_ASAP# | FLAG_OPT_FOR_O3
+        flags=FLAG_DEBUG | FLAG_ASAP
     )
     foresight = PassManager([
         TrivialLayout(coupling_map),
@@ -55,9 +55,14 @@ if __name__ == '__main__':
     start = time.time()
     fs_circ = foresight.run(circ)
     end = time.time()
+    fs_time = (end-start)*1000
+    start = time.time()
     sabre_circ = sabre.run(circ)
+    end = time.time()
+    sabre_time = (end-start)*1000
 
-    print('foresight time taken:', (end-start)*1000)
+    print('foresight time taken:', fs_time)
+    print('sabre time taken:', sabre_time)
 
     writer = open('foresight_circ.qasm', 'w')
     writer.write(fs_circ.qasm())

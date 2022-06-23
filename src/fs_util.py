@@ -27,7 +27,7 @@ def read_arch_file(arch_file):
     return CouplingMap(edges)
 
 # GATE SETS
-G_QISKIT_GATE_SET = ['u1', 'u2', 'u3', 'cx']
+G_QISKIT_GATE_SET = ['cx', 'rz', 'sx', 'x', 'id']
 
 # ALGORITHM PARAMETERS
 G_FORESIGHT_SOLN_CAP = 32

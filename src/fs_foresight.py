@@ -153,6 +153,7 @@ class ForeSight(TransformationPass):
         self.solutions = [init_kernel]
         # Start execution
         completed_solutions = []
+        countdown = 10
         cycle = 0
         prunings = 0
         while len(self.solutions) > 0:
@@ -191,94 +192,41 @@ class ForeSight(TransformationPass):
                 self.solutions = self.contract_solutions(self.solutions)
                 prunings += 1
             cycle += 1
+            if len(completed_solutions) > 0:
+                countdown -= 1
+                if countdown == 0:
+                    break
         self.iterations = cycle
         self.prunings = prunings
 
         completed_solutions = self.contract_solutions(completed_solutions)
         # Choose solution with minimum swaps.
-        if self.using_o3:
-            mapped_dag = None
-            # Run O3 on all completed solutions, choose the one with the minimum cnot count. 
-            for (i, kernel) in enumerate(completed_solutions): 
-                test_dag = dag._copy_circuit_metadata()
-                for layer in kernel.schedule:
-                    for node in layer:
-                        test_dag.apply_operation_back(
-                                op=node.op, qargs=node.qargs, cargs=node.cargs)
-                # Validate test dag.
-                orig_ops = dag.count_ops()
-                mapped_ops = test_dag.count_ops()
-                # Self-verify that no operations have been skipped.
-                error_found = False
-                for g in orig_ops:
-                    if g not in mapped_ops or orig_ops[g] != mapped_ops[g]:
-                        print('Error! Unequal non-SWAP gates after routing.')
-                        print('\tOriginal circuit: ', orig_ops)
-                        print('\tMapped circuit: ', mapped_ops)
-                        error_found = True
-                        break
-                if error_found:
-                    continue
-                # Apply Qiskit O3 to the test dag
-                test_circ = dag_to_circuit(test_dag)
-                try:
-                    test_circ = transpile(
-                        test_circ,
-                        coupling_map=self.coupling_map,
-                        basis_gates=G_QISKIT_GATE_SET,
-                        layout_method='trivial',
-                        routing_method='none',
-                        optimization_level=3
-                    )
-                except:
-                    test_circ = transpile(
-                        test_circ,
-                        coupling_map=self.coupling_map,
-                        basis_gates=G_QISKIT_GATE_SET,
-                        layout_method='trivial',
-                        routing_method='none',
-                        optimization_level=0
-                    )
-                test_dag = circuit_to_dag(test_circ)
-                cnots = test_dag.count_ops()['cx']
-                depth = test_dag.depth()
-                if self.debug:
-                    print('kernel %d of %d has %d cnots and %d depth (originally %d swaps)'\
-                            % (i, len(completed_solutions), cnots, depth, kernel.swap_count)) 
-                if mapped_dag is None:
-                    mapped_dag = test_dag
-                else:
-                    min_cnots = mapped_dag.count_ops()['cx']
-                    min_depth = mapped_dag.depth()
-                    if cmp(cnots, min_cnots, depth, min_depth):
-                        mapped_dag = test_dag
+        if self.noise_aware:
+            best_solution = max(completed_solutions, key=lambda x: x.expected_prob_success)
         else:
-            if self.noise_aware:
-                best_solution = max(completed_solutions, key=lambda x: x.expected_prob_success)
-            else:
-                best_solution = min(completed_solutions, key=lambda x: x.swap_count)
-            self.swap_segments = best_solution.swap_segments
-            self.property_set['final_layout'] = best_solution.layout
-            if self.fake_run:
-                return mapped_dag   
-            # Else build the dag.
-            for layer in best_solution.schedule:
-                for node in layer:
-                    mapped_dag.apply_operation_back(op=node.op, qargs=node.qargs, cargs=node.cargs)
-            # Validate mapped dag
-            # SWAPs already validated -- ops are valid, just check if all ops are there
-            orig_ops = dag.count_ops()
-            mapped_ops = mapped_dag.count_ops()
-            # Self-verify that no operations have been skipped.
-            for g in orig_ops:
-                if g not in mapped_ops or orig_ops[g] != mapped_ops[g]:
-                    print('Error! Unequal non-SWAP gates after routing.')
-                    print('\tOriginal circuit: ', orig_ops)
-                    print('\tMapped circuit: ', mapped_ops)
-                    break
-            if self.debug:
-                print('Number of swaps: %d' % best_solution.swap_count)
-                print('EPS: %f' % best_solution.expected_prob_success)
+            best_solution = min(completed_solutions, key=lambda x: x.swap_count)
+        self.swap_segments = best_solution.swap_segments
+        self.property_set['final_layout'] = best_solution.layout
+        if self.fake_run:
+            return mapped_dag   
+        # Else build the dag.
+        for layer in best_solution.schedule:
+            for node in layer:
+                mapped_dag.apply_operation_back(op=node.op, qargs=node.qargs, cargs=node.cargs)
+        # Validate mapped dag
+        # SWAPs already validated -- ops are valid, just check if all ops are there
+        orig_ops = dag.count_ops()
+        mapped_ops = mapped_dag.count_ops()
+        # Self-verify that no operations have been skipped.
+        for g in orig_ops:
+            if g not in mapped_ops or orig_ops[g] != mapped_ops[g]:
+                print('Error! Unequal non-SWAP gates after routing.')
+                print('\tOriginal circuit: ', orig_ops)
+                print('\tMapped circuit: ', mapped_ops)
+                break
+        if self.debug:
+            print('Number of swaps: %d' % best_solution.swap_count)
+            print('EPS: %e' % best_solution.expected_prob_success)
         if self.debug:
             print('Statistics')
             print('\tSuggestion usage:', self.suggestions)
