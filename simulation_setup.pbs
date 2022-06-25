@@ -1,0 +1,32 @@
+#!/bin/sh
+
+cd $PBS_O_WORKDIR
+
+module load parallel
+. `which env_parallel.bash`
+if [[ ! -z "" ]]; then EXTRA="s&^&ml ; &"; fi
+
+JOBFILE=pace/simulation_setup.jobs
+
+if [ ! -f $JOBFILE ]; then echo "File $JOBFILE does not exist. Exiting"; exit 0; fi
+
+if [ ! -d $HOME/.parallel-$PBS_JOBID ]; then mkdir $HOME/.parallel-$PBS_JOBID; fi
+
+TEMP=$HOME/.parallel-$PBS_JOBID
+
+uniq $PBS_NODEFILE > $TEMP/uniqnode
+anchor=1
+
+for i in `cat $TEMP/uniqnode`
+do
+    numCores=`grep $i $PBS_NODEFILE|wc -l`
+    numJobs=$(($numCores/1))
+    newAnchor=$(($numJobs+$anchor))
+    endAnchor=$(($newAnchor-1))
+    echo "sending ${numJobs} jobs to host $i (lines ${anchor} to ${endAnchor})"
+    sed -ne "${anchor},${endAnchor}${EXTRA}p" ${JOBFILE} | parallel --workdir $PBS_O_WORKDIR --joblog +$PBS_O_WORKDIR/$PBS_JOBNAME.gnu$(cut -f1 -d. <<<$PBS_JOBID) -S ${numJobs}/${i} --sshdelay 0.2 &
+    anchor=$newAnchor
+done
+wait
+rm -rf ~/.parallel-$PBS_JOBID
+

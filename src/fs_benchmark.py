@@ -600,10 +600,10 @@ from pytket import OpType
 from pytket.circuit import Qubit as TketQubit
 from pytket.circuit import Node as TketNode
 from pytket.qasm import circuit_from_qasm_str, circuit_to_qasm_str
-from pytket.architecture import Architecture
-from pytket.placement import Placement
-#from pytket.routing import Architecture
-#from pytket.routing import Placement
+#from pytket.architecture import Architecture
+#from pytket.placement import Placement
+from pytket.routing import Architecture
+from pytket.routing import Placement
 from pytket.transform import CXConfigType
 import pytket.passes
 

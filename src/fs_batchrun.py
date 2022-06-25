@@ -495,7 +495,7 @@ def batch501():
         solution_cap=64,
         flags=FLAG_ALAP
     )
-    _foresight_alap = lambda x,y: _foresight_route(x,y,foresight)
+    _foresight_alap = lambda x,y: _foresight_route(x,y,foresight_alap)
 
     benchmark_circuits(
         '../benchmarks/z3_circuits/ibm_tokyo',
@@ -512,7 +512,7 @@ def batch502():
         solution_cap=64,
         flags=FLAG_ALAP
     )
-    _foresight_asap = lambda x,y: _foresight_route(x,y,foresight)
+    _foresight_asap = lambda x,y: _foresight_route(x,y,foresight_asap)
 
     benchmark_circuits(
         '../benchmarks/z3_circuits/ibm_tokyo',
@@ -524,7 +524,7 @@ def batch502():
 
 def batch503():
     benchmark_circuits(
-        '../benchmarks/z3_circuis/ibm_tokyo',
+        '../benchmarks/z3_circuits/ibm_tokyo',
         '../arch/ibm_tokyo.arch',
         'sabre',
         _sabre_route
@@ -540,6 +540,6 @@ def batch504():
 
 if __name__ == '__main__':
     from sys import argv
-    batch_no = int(argv[1])
-    exec('batch%d()' % batch_no)
+    batch_no = argv[1]
+    exec('batch%s()' % batch_no)
 

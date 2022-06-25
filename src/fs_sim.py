@@ -27,7 +27,8 @@ def simulate(folder):
     data = {
         'base counts': base_counts
     }
-    for cat in ['sabre','foresight','noisy_foresight']:
+    for cat in ['sabre','foresight_alap','noisy_foresight_alap',\
+            'foresight_asap','noisy_foresight_asap']:
         circ = QuantumCircuit.from_qasm_file('%s/%s_circ.qasm' % (folder, cat))
         circ = transpile(
             circ,
