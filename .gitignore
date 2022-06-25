@@ -11,3 +11,5 @@ pace
 pace/*
 *.gnu*
 *.log
+core.*
+*.pbs
