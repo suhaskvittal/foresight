@@ -279,14 +279,6 @@ NOISEBENCH = [
     'qpe_n9.qasm'
 ]
 
-Z3BENCH = [
-    'z4_268.qasm',
-    '4gt12-v0_86.qasm',
-    '4_49_16.qasm',
-    'mod10_171.qasm',
-    'alu-v2_32.qasm'
-]
-
 def generate_sens_benchmarks(sens_folder, circuits, arch_file,
         base_folder='base', mapped_circ_name=None, routing_pass=None, reset=False
 ):
@@ -528,8 +520,8 @@ def merge_pickles(output_file, *input_files):
     pickle.dump(all_data, writer)
     writer.close()
 
-def merge_noise_sim_pickles(output_file):
-    base_path = os.path.join(BENCHMARK_PATH, 'noise')
+def merge_noise_sim_pickles(input_folder, output_file):
+    base_path = os.path.join(BENCHMARK_PATH, input_folder)
     benchmarks = [d for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path,d))]
 
     data = {}
@@ -545,7 +537,8 @@ def merge_noise_sim_pickles(output_file):
         except:
             continue
         # Read the qasm files
-        for cat in ['sabre', 'foresight', 'noisy_foresight']:
+        for cat in ['sabre', 'foresight_alap', 'noisy_foresight_alap',\
+                    'foresight_asap', 'noisy_foresight_asap']:
             circ = QuantumCircuit.from_qasm_file(
                         '%s/%s/%s_circ.qasm' % (base_path, subfolder, cat))
             if 'cx' not in circ.count_ops():
@@ -600,10 +593,10 @@ from pytket import OpType
 from pytket.circuit import Qubit as TketQubit
 from pytket.circuit import Node as TketNode
 from pytket.qasm import circuit_from_qasm_str, circuit_to_qasm_str
-#from pytket.architecture import Architecture
-#from pytket.placement import Placement
-from pytket.routing import Architecture
-from pytket.routing import Placement
+from pytket.architecture import Architecture
+from pytket.placement import Placement
+#from pytket.routing import Architecture
+#from pytket.routing import Placement
 from pytket.transform import CXConfigType
 import pytket.passes
 
@@ -642,13 +635,13 @@ def _z3_route(circ, arch_file):
     output_circ = QuantumCircuit(1,1)
     try:
         results = mqt.qmap.compile(
-                circ, arch_file, method='exact', initial_layout='identity')
+                circ, arch_file, method='exact', initial_layout='identity',
+                encoding='bimander', commander_grouping='fixed3')
         results = results.json()
         output_circ = QuantumCircuit.from_qasm_str(results['mapped_circuit']['qasm'])
     except Exception as e:
         print(e)
     return output_circ
-
 
 DATA_FOLDER_PATH = '../data/'
 DATA_BENCH_PATH = '%s/benchmarks' % DATA_FOLDER_PATH
@@ -698,9 +691,6 @@ def compile_all_sensitivity(tmsens=True, bvsens=True, gensens=True, ins=True, co
         insertion_analysis('%s/foresight_vs_sabre_swpins.pkl' % DATA_SENS_PATH)
     if conv:
         convergence_analysis('%s/foresight_vs_sabre_100iter.pkl' % DATA_SENS_PATH)
-
-def compile_noise_sims():
-    merge_noise_sim_pickles('../data/noisesim/simulations.pkl')
 
 TOQM_CMP_CIRCUITS = [
     'square_root_7.qasm',

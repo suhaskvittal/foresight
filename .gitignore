@@ -13,3 +13,4 @@ pace/*
 *.log
 core.*
 *.pbs
+.DS_Store
