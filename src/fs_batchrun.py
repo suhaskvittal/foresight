@@ -5,15 +5,16 @@
 
 from fs_util import read_arch_file
 from fs_benchmark import benchmark_circuits
-from fs_benchmark import _sabre_route, _foresight_route, _astar_route, _tket_route, _z3_route
+from fs_benchmark import _sabre_route, _foresight_route, _astar_route,\
+                        _tket_route, _z3_route, _bip_route
 from fs_foresight import *
 from fs_noise import google_sycamore_noise_model
 
 # NOTE: Unless otherwise stated, a compiler will execute for 5 runs.
 # ForeSight only needs one run as it has immediate convergence.
 
-IBM_TOKYO = read_arch_file('../arch/ibm_tokyo.arch')
 IBM_MANILA = read_arch_file('../arch/ibm_manila.arch')
+IBM_TOKYO = read_arch_file('../arch/ibm_tokyo.arch')
 GOOGLE_SYCAMORE = read_arch_file('../arch/google_weber.arch')
 RIGETTI_ASPEN9 = read_arch_file('../arch/rigetti_aspen9.arch')
 IBM_TORONTO = read_arch_file('../arch/ibm_toronto.arch')
@@ -499,7 +500,7 @@ def batch501():
     _foresight_alap = lambda x,y: _foresight_route(x,y,foresight_alap)
 
     benchmark_circuits(
-        '../benchmarks/z3_circuits/ibm_manila',
+        '../benchmarks/solver_circuits/ibm_manila',
         '../arch/ibm_manila.arch',
         'foresight_alap',
         _foresight_alap,
@@ -516,7 +517,7 @@ def batch502():
     _foresight_asap = lambda x,y: _foresight_route(x,y,foresight_asap)
 
     benchmark_circuits(
-        '../benchmarks/z3_circuits/ibm_manila',
+        '../benchmarks/solver_circuits/ibm_manila',
         '../arch/ibm_manila.arch',
         'foresight_asap',
         _foresight_asap,
@@ -525,7 +526,7 @@ def batch502():
 
 def batch503():
     benchmark_circuits(
-        '../benchmarks/z3_circuits/ibm_manila',
+        '../benchmarks/solver_circuits/ibm_manila',
         '../arch/ibm_manila.arch',
         'sabre',
         _sabre_route
@@ -533,7 +534,7 @@ def batch503():
 
 def batch504():
     benchmark_circuits(
-        '../benchmarks/z3_circuits/ibm_manila',
+        '../benchmarks/solver_circuits/ibm_manila',
         '../arch/ibm_manila.arch',
         'z3solver',
         _z3_route

@@ -593,10 +593,10 @@ from pytket import OpType
 from pytket.circuit import Qubit as TketQubit
 from pytket.circuit import Node as TketNode
 from pytket.qasm import circuit_from_qasm_str, circuit_to_qasm_str
-from pytket.architecture import Architecture
-from pytket.placement import Placement
-#from pytket.routing import Architecture
-#from pytket.routing import Placement
+#from pytket.architecture import Architecture
+#from pytket.placement import Placement
+from pytket.routing import Architecture
+from pytket.routing import Placement
 from pytket.transform import CXConfigType
 import pytket.passes
 
@@ -642,6 +642,16 @@ def _z3_route(circ, arch_file):
     except Exception as e:
         print(e)
     return output_circ
+
+def _bip_route(circ, arch_file):
+    backend = read_arch_file(arch_file)
+    compiler = BIPMapping(backend)
+    bip_pass = PassManager([
+        TrivialLayout(backend),
+        ApplyLayout(),
+        compiler
+    ])
+    return bip_pass.run(circ)
 
 DATA_FOLDER_PATH = '../data/'
 DATA_BENCH_PATH = '%s/benchmarks' % DATA_FOLDER_PATH
