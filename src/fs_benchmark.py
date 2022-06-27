@@ -593,10 +593,12 @@ from pytket import OpType
 from pytket.circuit import Qubit as TketQubit
 from pytket.circuit import Node as TketNode
 from pytket.qasm import circuit_from_qasm_str, circuit_to_qasm_str
-#from pytket.architecture import Architecture
-#from pytket.placement import Placement
-from pytket.routing import Architecture
-from pytket.routing import Placement
+try:  # Need to do this because PACE has a lower python version.
+    from pytket.architecture import Architecture
+    from pytket.placement import Placement
+except ImportError:
+    from pytket.routing import Architecture
+    from pytket.routing import Placement
 from pytket.transform import CXConfigType
 import pytket.passes
 
@@ -657,7 +659,7 @@ DATA_FOLDER_PATH = '../data/'
 DATA_BENCH_PATH = '%s/benchmarks' % DATA_FOLDER_PATH
 DATA_SENS_PATH = '%s/sensitivity' % DATA_FOLDER_PATH
 
-def compile_all_benchmarks(compilers=['sabre','foresight','tket','astar']):
+def compile_all_benchmarks(compilers=['sabre','foresight_alap','foresight_asap','tket','astar']):
     compile_data('../benchmarks/mapped_circuits/ibm_tokyo',
             '../arch/ibm_tokyo.arch', '../data/benchmarks/csv/ibm_tokyo.csv',
             'ibm_tokyo.pkl', compilers=compilers, use_O3=True)
@@ -667,10 +669,19 @@ def compile_all_benchmarks(compilers=['sabre','foresight','tket','astar']):
     compile_data('../benchmarks/mapped_circuits/rigetti_aspen9',
             '../arch/rigetti_aspen9.arch', '../data/benchmarks/csv/rigetti_aspen9.csv',
             'rigetti_aspen9.pkl', compilers=compilers, use_O3=True)
-    merge_pickles('benchmarks.pkl', 'ibm_tokyo.pkl', 'google_sycamore.pkl', 'rigetti_aspen9.pkl')
+    compile_data('../benchmarks/mapped_circuits/ibm_toronto',
+            '../arch/ibm_toronto.arch', '../data/benchmarks/csv/ibm_toronto.csv',
+            'ibm_toronto.pkl', compilers=compilers, use_O3=True)
+    compile_data('../benchmarks/mapped_circuits/ibm_heavyhex',
+            '../arch/ibm_3heavyhex.arch', '../data/benchmarks/csv/ibm_heavyhex.csv',
+            'ibm_heavyhex.pkl', compilers=compilers, use_O3=True)
+    merge_pickles('benchmarks.pkl', 'ibm_tokyo.pkl', 'google_sycamore.pkl', 'rigetti_aspen9.pkl',\
+                    'ibm_toronto.pkl', 'ibm_heavyhex.pkl')
     os.system('mv *.pkl ../data/benchmarks')
 
-def compile_all_sensitivity(tmsens=True, bvsens=True, gensens=True, ins=True, conv=True):
+def compile_all_sensitivity(tmsens=True, bvsens=True, gensens=True, ins=True, conv=True,\
+        solver=True
+):
     if tmsens:
         tmsens_input_path = '%s/tmsens' % BENCHMARK_PATH
         tmsens_csv_path = '%s/tmsens/csv/tmsens.csv' % DATA_SENS_PATH
@@ -701,6 +712,13 @@ def compile_all_sensitivity(tmsens=True, bvsens=True, gensens=True, ins=True, co
         insertion_analysis('%s/foresight_vs_sabre_swpins.pkl' % DATA_SENS_PATH)
     if conv:
         convergence_analysis('%s/foresight_vs_sabre_100iter.pkl' % DATA_SENS_PATH)
+    if solver:
+        solver_input_path = '%s/solver_circuits/ibm_manila' % BENCHMARK_PATH
+        solver_csv_path = '%s/solver/csv/solver.csv' % DATA_SENS_PATH
+        solver_pkl_path = '%s/solver/solver.pkl' % DATA_SENS_PATH
+        solver_compilers = ['sabre','foresight_alap','foresight_asap','z3solver','bipsolver']
+        compile_data(solver_input_path, '../arch/ibm_manila.arch',\
+                solver_csv_path, solver_pkl_path, compilers=solver_compilers, use_O3=True)
 
 TOQM_CMP_CIRCUITS = [
     'square_root_7.qasm',

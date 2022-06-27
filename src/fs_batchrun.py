@@ -540,6 +540,14 @@ def batch504():
         _z3_route
     )
 
+def batch505():
+    benchmark_circuits(
+        '../benchmarks/solver_circuits/ibm_manila',
+        '../arch/ibm_manila.arch',
+        'bipsolver',
+        _bip_route
+    )
+
 if __name__ == '__main__':
     from sys import argv
     batch_no = argv[1]
