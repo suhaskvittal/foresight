@@ -33,6 +33,34 @@ G_QISKIT_GATE_SET = ['cx', 'rz', 'sx', 'x', 'id']
 G_FORESIGHT_SOLN_CAP = 32
 G_FORESIGHT_SLACK = 2
 
+def get_error_rates_from_ibmq_backend(ibmq_backend):
+    coupling_map = CouplingMap(ibmq_backend.configuration().coupling_map)
+
+    sq_error_rates = [0 for _ in range(coupling_map.size())]
+    cx_error_rates = {}
+    ro_error_rates = [0 for _ in range(coupling_map.size())]
+
+    mean_coh_t1 = 0
+    mean_cx_time = 0
+
+    for p in coupling_map.physical_qubits:
+        error = 0
+        for g in G_QISKIT_GATE_SET:
+            if g == 'cx':
+                continue
+            e = ibmq_backend.properties().gate_error(g, p)
+            if e > error:
+                error = e
+        sq_error_rates[p] = error
+        ro_error_rates[p] = ibmq_backend.properties().readout_error(p)
+        mean_coh_t1 += ibmq_backend.properties().t1(p) * 1e9
+    for edge in coupling_map.get_edges():
+        cx_error_rates[tuple(edge)] = ibmq_backend.properties().gate_error('cx', edge)
+        mean_cx_time += ibmq_backend.properties().gate_length('cx', edge) * 1e9
+    mean_coh_t1 /= coupling_map.size()
+    mean_cx_time /= len(coupling_map.get_edges())
+    return sq_error_rates, cx_error_rates, ro_error_rates, mean_coh_t1, mean_cx_time
+
 def _soln_hash_f(soln):
     h = 0
     PRIME = 5586537595543

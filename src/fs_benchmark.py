@@ -655,6 +655,19 @@ def _bip_route(circ, arch_file):
     ])
     return bip_pass.run(circ)
 
+from olsq import OLSQ
+from olsq.device import qcdevice
+
+def _olsq_route(circ, arch_file):
+    backend = read_arch_file(arch_file)
+
+    solver = OLSQ('swap', 'transition')
+    solver.setdevice(qcdevice(name='dev', nqubits=backend.size(),\
+                        connection=[tuple(e) for e in backend.get_edges()], swap_duration=3))
+    solver.setprogram(circ.qasm())
+    res, _, _ = solver.solve()
+    return QuantumCircuit.from_qasm_str(res)
+
 DATA_FOLDER_PATH = '../data/'
 DATA_BENCH_PATH = '%s/benchmarks' % DATA_FOLDER_PATH
 DATA_SENS_PATH = '%s/sensitivity' % DATA_FOLDER_PATH
@@ -716,30 +729,27 @@ def compile_all_sensitivity(tmsens=True, bvsens=True, gensens=True, ins=True, co
         solver_input_path = '%s/solver_circuits/ibm_manila' % BENCHMARK_PATH
         solver_csv_path = '%s/solver/csv/solver.csv' % DATA_SENS_PATH
         solver_pkl_path = '%s/solver/solver.pkl' % DATA_SENS_PATH
-        solver_compilers = ['sabre','foresight_alap','foresight_asap','z3solver','bipsolver']
+        solver_compilers = ['sabre','foresight_alap','foresight_asap','z3solver','bipsolver','olsq']
         compile_data(solver_input_path, '../arch/ibm_manila.arch',\
                 solver_csv_path, solver_pkl_path, compilers=solver_compilers, use_O3=True)
-
-TOQM_CMP_CIRCUITS = [
-    'square_root_7.qasm',
-    'wim_266.qasm',
-    'sf_276.qasm',
-    '4_49_16.qasm'
-]
 
 CMP_CIRCUITS = [
     'cycle10_2_110.qasm',
     'adr4_197.qasm',
     'hwb4_49.qasm',
     'vqe_n8.qasm',
-    'sym9_148.qasm'
+    'sym9_148.qasm',
+    '4_49_16.qasm',
+    'wim_266.qasm',
+    'square_root_7.qasm',
+    'hwb4_49.qasm'
 ]
 
 def compile_for_analytical_model(output_file):
     base_path = '%s/mapped_circuits/google_sycamore' % BENCHMARK_PATH
     backend = read_arch_file('../arch/google_sycamore.arch')
     data = {}
-    for circ_name in TOQM_CMP_CIRCUITS:
+    for circ_name in CMP_CIRCUITS:
         base_circ = QuantumCircuit.from_qasm_file(
                 '%s/%s/base_mapping.qsm' % (base_path, circ_name))
         data[circ_name] = {
@@ -766,7 +776,7 @@ def compile_for_analytical_model(output_file):
     writer.close()
 
 def compile_toqm():
-    arch_names = ['ibm_tokyo', 'google_sycamore', 'rigetti_aspen9']
+    arch_names = ['google_sycamore']
 
     for arch_name in arch_names:
         toqm_input_path = '%s/mapped_circuits/%s' % (BENCHMARK_PATH, arch_name)
@@ -775,7 +785,7 @@ def compile_toqm():
 
         compile_data(toqm_input_path, '../arch/%s.arch' % arch_name,
                 toqm_csv_path, toqm_pkl_path, compilers=['sabre', 'foresight', 'toqm'], 
-                use_O3=True, circuits=TOQM_CMP_CIRCUITS)
+                use_O3=True, circuits=CMP_CIRCUITS)
 
 def compare_eps_sycamore(compilers, circuits):
     base_path = '%s/mapped_circuits/google_sycamore' % BENCHMARK_PATH
@@ -897,7 +907,7 @@ def compare_eps_sycamore(compilers, circuits):
                     % (avg_sq_error_rate, avg_cx_error_rate, avg_ro_error_rate))
 
 def compare_eps_general(arch_name, compilers, circuits,
-        coh_t1=15000, cxtime=32, sqtime=25, cxerror=0.01, sqerror=0.001, roerror=0.02):
+        coh_t1=15000, cxtime=32, sqtime=25, cxerror=0.01, sqerror=0.001, roerror=0.02, use_O3=True):
     base_path = '%s/mapped_circuits/%s' % (BENCHMARK_PATH,arch_name)
     # Compute EPS for each circuit
     backend = read_arch_file('../arch/%s.arch' % arch_name)
@@ -914,7 +924,7 @@ def compare_eps_general(arch_name, compilers, circuits,
                     coupling_map=backend,
                     layout_method='trivial',
                     routing_method='none',
-                    optimization_level=3)
+                    optimization_level=3 if use_O3 else 0)
             eps = 1.0
             logeps = 0.0
             num_cnots = circ.count_ops()['cx']

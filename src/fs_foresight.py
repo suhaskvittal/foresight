@@ -46,6 +46,8 @@ class ForeSight(TransformationPass):
         cx_error_rates=None,
         sq_error_rates=None,
         ro_error_rates=None,
+        layer_time=None,
+        coh_t1=None,
         flags=DEFAULT_FLAGS
     ):
         """
@@ -84,6 +86,8 @@ class ForeSight(TransformationPass):
         self.cx_error_rates = cx_error_rates
         self.sq_error_rates = sq_error_rates
         self.ro_error_rates = ro_error_rates
+        self.layer_time = layer_time
+        self.coh_t1 = coh_t1
         
         self.distance_matrix, self.paths_on_arch = process_coupling_map(
             coupling_map,
@@ -205,7 +209,12 @@ class ForeSight(TransformationPass):
         completed_solutions = self.contract_solutions(completed_solutions)
         # Choose solution with minimum swaps.
         if self.noise_aware:
-            best_solution = max(completed_solutions, key=lambda x: x.expected_prob_success)
+            if self.coh_t1 is None:
+                metric = lambda x: x.expected_prob_success
+            else:
+                metric = lambda x:\
+                        x.expected_prob_success*np.exp(-(len(x.schedule)*self.layer_time)/self.coh_t1)
+            best_solution = max(completed_solutions, key=metric)
         else:
             best_solution = min(completed_solutions, key=lambda x: x.swap_count)
         self.swap_segments = best_solution.swap_segments
@@ -243,7 +252,10 @@ class ForeSight(TransformationPass):
             hashed_layout = HashedLayout.from_layout(layout)
 
             if self.noise_aware:
-                score = (1.0-kernel.expected_prob_success) / len(kernel.completed_nodes)
+                eps = kernel.expected_prob_success
+                if self.coh_t1 is not None:
+                    eps *= np.exp(-len(kernel.schedule)*self.layer_time / self.coh_t1)
+                score = (1.0-eps) / len(kernel.completed_nodes)
             else:
                 score = kernel.swap_count / len(kernel.completed_nodes)
             if hashed_layout not in layout_table:
@@ -738,7 +750,8 @@ class ForeSight(TransformationPass):
             latest_layout = test_layout
             latest_fold = fold
             # Compute distance to post primary layer.
-            dist = self._distf(len(path)-1, future_gates, test_layout)
+            layers = len(path)-i-1 if i <= len(path)//2 else i
+            dist = self._distf(len(path)-1, future_gates, test_layout, layers=layers)
             if dist < min_dist or min_dist == -1:
                 min_dist = dist
                 min_folds = [(
@@ -792,10 +805,10 @@ class ForeSight(TransformationPass):
         if verify_only:
             dist = 0
         else:
-            dist = self._distf(size, future_gates, test_layout)
+            dist = self._distf(size, future_gates, test_layout, layers=len(soln))
         return True, dist, test_layout, size
 
-    def _distf(self, soln_size, post_primary_layer_view, test_layout):
+    def _distf(self, soln_size, post_primary_layer_view, test_layout, layers=1):
         """
             The distance heuristic function to determine the goodness of a
             solution.
@@ -831,7 +844,10 @@ class ForeSight(TransformationPass):
             return 0
         else:
             dist = dist/num_ops
-            return dist+soln_size*np.exp(-(num_ops/(self.mean_degree**1.5))) 
+            if self.noise_aware and self.coh_t1 is not None:
+                return dist+(soln_size*np.log(layers+1))*np.exp(-(num_ops/(self.mean_degree**1.5))) 
+            else:
+                return dist+soln_size*np.exp(-(num_ops/(self.mean_degree**1.5))) 
 
     def _dfs_find_invalid_and_update(self, prio_queues, pjtree):
         dfs_stack = [pjtree.root]
