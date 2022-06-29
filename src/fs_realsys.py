@@ -85,8 +85,8 @@ def run_circuits_on_device(backend_name, circuits=None):
         for cat in ['sabre','foresight_alap','noisy_foresight_alap',\
                 'foresight_asap','noisy_foresight_asap']:
             job_index = circuit_to_index[subfolder][cat]
-            counts = res.get_counts(job_index)
-            for i in range(1, 5):
+            counts = defaultdict(int)
+            for i in range(5):
                 c = res.get_counts(job_index+i)
                 for x in c:
                     counts[x] += c[x]

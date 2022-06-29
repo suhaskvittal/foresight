@@ -377,11 +377,11 @@ def batch201():
         return (lambda x,y: _foresight_route(x,y,foresight))
     foresight_table = {}
     for slack in [0,1,2,3,4]:
-        for solution_cap in [4,8,16,32,64]:
+        for solution_cap in [4,8,16,32,64,128]:
             _foresight = genforesight(slack,solution_cap)
             foresight_table[(slack,solution_cap)] = _foresight
     for slack in [0,1,2,3,4]:
-        for solution_cap in [4,8,16,32,64]:
+        for solution_cap in [4,8,16,32,64,128]:
             print('slack = %d, solution_cap=%d' % (slack, solution_cap))
             _foresight = foresight_table[(slack,solution_cap)]
             benchmark_circuits(
