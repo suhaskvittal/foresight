@@ -696,23 +696,23 @@ def compile_all_sensitivity(tmsens=True, bvsens=True, gensens=True, ins=True, co
         solver=True
 ):
     if tmsens:
-        tmsens_input_path = '%s/tmsens' % BENCHMARK_PATH
+        tmsens_input_path = '%s/sensitivity/tmsens_100grid' % BENCHMARK_PATH
         tmsens_csv_path = '%s/tmsens/csv/tmsens.csv' % DATA_SENS_PATH
         tmsens_pkl_path = '%s/tmsens/tmsens.pkl' % DATA_SENS_PATH
         tmsens_compilers = []
         for d in [0,1,2,3,4]:
-            for s in [4,8,16,32,64]:
+            for s in [4,8,16,32,64,128]:
                 tmsens_compilers.append('fs_%d_%d' % (d,s))
         compile_data(tmsens_input_path, '../arch/google_weber.arch',
                 tmsens_csv_path, tmsens_pkl_path, compilers=tmsens_compilers, use_O3=False)
     if bvsens:    
-        bvsens_input_path = '%s/bvsens' % BENCHMARK_PATH
+        bvsens_input_path = '%s/sensitivity/bvsens_500grid' % BENCHMARK_PATH
         bvsens_csv_path = '%s/bvsens/csv/bvsens.csv' % DATA_SENS_PATH
         bvsens_pkl_path = '%s/bvsens/bvsens.pkl' % DATA_SENS_PATH
         compile_data(bvsens_input_path, '../arch/500grid.arch', 
                 bvsens_csv_path, bvsens_pkl_path, compilers=['sabre','foresight'], use_O3=False)
     if gensens:
-        gensens_input_path = '%s/gensens' % BENCHMARK_PATH
+        gensens_input_path = '%s/sensitivity/gensens_sycamore' % BENCHMARK_PATH
         gensens_csv_path = '%s/gensens/csv/gensens.csv' % DATA_SENS_PATH
         gensens_pkl_path = '%s/gensens/gensens.pkl' % DATA_SENS_PATH
         gensens_compilers = []
@@ -920,7 +920,7 @@ def compare_eps_general(arch_name, compilers, circuits,
             circ = QuantumCircuit.from_qasm_file(
                     '%s/%s/%s_circ.qasm' % (base_path, circ_name, policy))
             circ = transpile(circ,
-                    basis_gates=G_QISKIT_GATE_SET,
+                    basis_gates=['cx','u1','u2','u3'],
                     coupling_map=backend,
                     layout_method='trivial',
                     routing_method='none',

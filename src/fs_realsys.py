@@ -34,7 +34,7 @@ def backend_to_arch_file(backend_name):
         writer.write('%d %d\n' % (i,j))
     writer.close()
 
-def run_circuits_on_device(backend_name, circuits=None):
+def run_circuits_on_device(backend_name, circuits=None, use_dd=False):
     ibmq_backend = provider.get_backend(backend_name) 
     ins_dur = InstructionDurations.from_backend(ibmq_backend) 
     folder = '../benchmarks/fidelity_tests/%s' % backend_name
@@ -70,7 +70,8 @@ def run_circuits_on_device(backend_name, circuits=None):
             pm_dd = PassManager([ALAPScheduleAnalysis(ins_dur),\
                         PadDynamicalDecoupling(ins_dur, [XGate(), XGate()])])
             print('\t%s: cnots=%d, depth=%d' % (cat, circ.count_ops()['cx'], circ.depth()))
-#            circ = pm_dd.run(circ)
+            if use_dd:
+                circ = pm_dd.run(circ)
             curr_index = len(circ_array)
             circuit_to_index[subfolder][cat] = curr_index
             for _ in range(5):
