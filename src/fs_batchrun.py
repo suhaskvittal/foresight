@@ -26,6 +26,7 @@ RIGETTI_ASPEN9 = read_arch_file('../arch/rigetti_aspen9.arch')
 IBM_TORONTO = read_arch_file('../arch/ibm_toronto.arch')
 IBM_HANOI = read_arch_file('../arch/ibm_hanoi.arch')
 IBM_MONTREAL = read_arch_file('../arch/ibmq_montreal.arch')
+IBM_KOLKATA = read_arch_file('../arch/ibmq_kolkata.arch')
 IBM_MUMBAI = read_arch_file('../arch/ibmq_mumbai.arch')
 IBM_HEAVYHEX = read_arch_file('../arch/ibm_3heavyhex.arch')
 GRID100 = read_arch_file('../arch/100grid.arch')
@@ -337,7 +338,7 @@ def batch101():
         return (lambda x,y: _foresight_route(x,y,foresight))
     foresight_table = {}
     for slack in [0,1,2,3,4]:
-        for solution_cap in [4,8,16,32,64]:
+        for solution_cap in [4,8,16,32,64,128]:
             _foresight = genforesight(slack,solution_cap)
             foresight_table[(slack,solution_cap)] = _foresight
     benchmark_circuits(
@@ -346,23 +347,15 @@ def batch101():
         'sabre',
         _sabre_route
     )
-    for slack in [0,1,2,3,4]:
-        _foresight = foresight_table[(slack,64)]
-        benchmark_circuits(
-            '../benchmarks/sensitivity/gensens_sycamore',
-            '../arch/google_weber.arch',
-            'fs_%d_%d' % (slack, 64),
-            _foresight,
-            runs=1
-        )
-    for solution_cap in [4,8,16,32,64]:
+    for solution_cap in [4,8,16,32,64,128]:
         _foresight = foresight_table[(2,solution_cap)]
         benchmark_circuits(
             '../benchmarks/sensitivity/gensens_sycamore',
             '../arch/google_weber.arch',
             'fs_%d_%d' % (2, solution_cap),
             _foresight,
-            runs=1
+            runs=1,
+            memory=False
         )
 
 # TIME AND MEMORY COMPLEXITY ANALYSIS USING BV50 AND BV100 ON 100 QUBIT GRID
@@ -828,6 +821,90 @@ def batch405():
     benchmark_circuits(
         '../benchmarks/fidelity_tests/ibm_auckland',
         '../arch/ibm_auckland.arch',
+        'noisy_foresight_asap',
+        _fs2,
+        runs=1
+    )
+
+def batch406():
+    ibmq_backend = provider.get_backend('ibmq_kolkata')
+    sq_error_rates, cx_error_rates, ro_error_rates, mean_coh_t1, mean_cx_time =\
+        get_error_rates_from_ibmq_backend(ibmq_backend)
+    cx_error_rate_list = [cx_error_rates[c] for c in cx_error_rates]
+    # Compute statistics
+    mean_cx_error_rate = np.mean(cx_error_rate_list)
+    min_cx_error_rate = np.min(cx_error_rate_list)
+    max_cx_error_rate = np.max(cx_error_rate_list)
+
+    # We have found that ALAP ForeSight performs best with delta=mean, ASAP is best with delta=max.
+    foresight_noise_unaware_alap = ForeSight(
+        IBM_KOLKATA,
+        slack=1,
+        solution_cap=64,
+        flags=FLAG_ALAP
+    )
+    foresight_noise_aware_alap = ForeSight(
+        IBM_KOLKATA,
+        slack=mean_cx_error_rate,
+        solution_cap=64,
+        cx_error_rates=cx_error_rates,
+        sq_error_rates=sq_error_rates,
+        ro_error_rates=ro_error_rates,
+        coh_t1=mean_coh_t1,
+        layer_time=mean_cx_time,
+        flags=FLAG_ALAP|FLAG_NOISE_AWARE
+    )
+    foresight_noise_unaware_asap = ForeSight(
+        IBM_KOLKATA,
+        slack=1,
+        solution_cap=64,
+        flags=FLAG_ASAP
+    )
+    foresight_noise_aware_asap = ForeSight(
+        IBM_KOLKATA,
+        slack=max_cx_error_rate,
+        solution_cap=64,
+        cx_error_rates=cx_error_rates,
+        sq_error_rates=sq_error_rates,
+        ro_error_rates=ro_error_rates,
+        coh_t1=mean_coh_t1,
+        layer_time=mean_cx_time,
+        flags=FLAG_ASAP|FLAG_NOISE_AWARE
+    )
+    _fs1 = lambda x,y: _foresight_route(x,y,foresight_noise_unaware_alap)
+    _fs2 = lambda x,y: _foresight_route(x,y,foresight_noise_aware_alap)
+    _fs3 = lambda x,y: _foresight_route(x,y,foresight_noise_unaware_asap)
+    _fs4 = lambda x,y: _foresight_route(x,y,foresight_noise_aware_asap)
+    benchmark_circuits(
+        '../benchmarks/fidelity_tests/ibmq_kolkata',
+        '../arch/ibmq_kolkata.arch',
+        'sabre',
+        _sabre_route
+    )
+    benchmark_circuits(
+        '../benchmarks/fidelity_tests/ibmq_kolkata',
+        '../arch/ibmq_kolkata.arch',
+        'foresight_alap',
+        _fs1,
+        runs=1
+    )
+    benchmark_circuits(
+        '../benchmarks/fidelity_tests/ibmq_kolkata',
+        '../arch/ibmq_kolkata.arch',
+        'noisy_foresight_alap',
+        _fs2,
+        runs=1
+    )
+    benchmark_circuits(
+        '../benchmarks/fidelity_tests/ibmq_kolkata',
+        '../arch/ibmq_kolkata.arch',
+        'foresight_asap',
+        _fs1,
+        runs=1
+    )
+    benchmark_circuits(
+        '../benchmarks/fidelity_tests/ibmq_kolkata',
+        '../arch/ibmq_kolkata.arch',
         'noisy_foresight_asap',
         _fs2,
         runs=1

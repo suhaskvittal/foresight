@@ -256,16 +256,15 @@ BVSENS = [
 ]
 
 GENSENS = [
-    'cm85a_209.qasm',
-    'sqn_258.qasm',
-    'misex1_241.qasm',
-    'hwb5_53.qasm',
-    'rd53_251.qasm',
-    'f2_232.qasm',
-    'sf_276.qasm',
-    'sym9_146.qasm',
-    'mini-alu_167.qasm',
-    'mod10_171.qasm',
+    'cycle10_2_110.qasm',
+    'adr4_197.qasm',
+    'hwb4_49.qasm',
+    'sym9_148.qasm',
+    '4_49_16.qasm',
+    'wim_266.qasm',
+    'square_root_7.qasm',
+    'hwb4_49.qasm',
+    'life_238.qasm'
 ]
 
 NOISEBENCH = [
@@ -716,7 +715,7 @@ def compile_all_sensitivity(tmsens=True, bvsens=True, gensens=True, ins=True, co
         gensens_csv_path = '%s/gensens/csv/gensens.csv' % DATA_SENS_PATH
         gensens_pkl_path = '%s/gensens/gensens.pkl' % DATA_SENS_PATH
         gensens_compilers = []
-        for s in [4,8,16,32,64]:
+        for s in [4,8,16,32,64,128]:
             gensens_compilers.append('fs_%d_%d' % (2,s))
         gensens_compilers.append('sabre')
         compile_data(gensens_input_path, '../arch/google_weber.arch',
@@ -953,6 +952,62 @@ def compare_eps_general(arch_name, compilers, circuits,
             print('\t\tlatency: %d' % time)
             print('\t\tqubits used: %d' % len(active))
             print('\t\tEPS: %.3e (%.3e)' % (eps, logeps))
+
+BMT_CIRCUITS = [
+    'hwb4_49.qasm',
+    'wim_266.qasm',
+    'misex1_241.qasm',
+    'cycle10_2_110.qasm',
+    'square_root_7.qasm',
+    'vqe_n8.qasm'
+]
+
+def compare_foresight_bmt():
+    backend = read_arch_file('../arch/ibm_tokyo.arch')
+    for circ_name in BMT_CIRCUITS:
+        print('[%s]' % circ_name)
+        base_circ = QuantumCircuit.from_qasm_file('%s/mapped_circuits/ibm_tokyo/%s/base_mapping.qasm'\
+                            % (BENCHMARK_PATH, circ_name))
+        base_cnots = base_circ.count_ops()['cx']
+        for cat in ['foresight_alap', 'bmt']:
+            circ = QuantumCircuit.from_qasm_file('%s/mapped_circuits/ibm_tokyo/%s/%s_circ.qasm'\
+                            % (BENCHMARK_PATH, circ_name, cat))
+            circ = transpile(circ,
+                    basis_gates=G_QISKIT_GATE_SET,
+                    optimization_level=3)
+            cnots = circ.count_ops()['cx']
+            depth = circ.depth()
+            print('\t%s: cnot overhead=%d, depth=%d' % (cat, cnots-base_cnots, depth))
+
+def compute_cnot_dist_stats(arch_name, arch_file):
+    reader = open('../data/benchmarks/benchmarks.pkl', 'rb')
+    benchmarks = pickle.load(reader)
+    reader.close()
+
+    coupling_map = read_arch_file(arch_file)
+
+    circ_dists = []
+    for circ_name in benchmarks[arch_name]:
+        circ = QuantumCircuit.from_qasm_str(\
+                benchmarks[arch_name][circ_name]['original']['original qasm'])
+        dist = 0
+        num_cx = 0
+        for (ins, qargs, _) in circ.data:
+            if ins.name == 'cx':
+                q0,q1 = qargs
+                dist += coupling_map.distance_matrix[q0.index, q1.index]
+                num_cx += 1
+        if num_cx > 0:
+            dist /= num_cx
+            circ_dists.append(dist)
+        print('\t[%s] dist = %f' % (circ_name, dist))
+    print('dist mean: %f, stdev: %f' % (np.mean(circ_dists), np.std(circ_dists)))
+
+def compute_cnot_dist_all_archs():
+    for arch_name in ['ibm_tokyo', 'ibm_toronto', 'google_sycamore', 'rigetti_aspen9']:
+        arch_file = '../arch/%s.arch' % arch_name
+        print(arch_name)
+        compute_cnot_dist_stats(arch_name, arch_file)
 
 def prob_of_success(pgate,Ng,n,depth,T1_time,pmeas=0.01,gate_duration=100):
 	'''

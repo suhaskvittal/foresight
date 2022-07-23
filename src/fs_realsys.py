@@ -107,6 +107,46 @@ def run_circuits_on_device(backend_name, circuits=None, use_dd=False):
         pickle.dump(data, writer)
         writer.close()
 
+def data_from_job_id(job_id, backend_name):
+    ibmq_backend = provider.get_backend(backend_name) 
+    job = ibmq_backend.retrieve_job(job_id)
+    res = job.result()
+    job_index = 0
+    folder = '../benchmarks/fidelity_tests/%s' % backend_name
+    benchmark_folders = [d for d in os.listdir(folder) if os.path.isdir(os.path.join(folder, d))]
+    all_data = {}
+    for subfolder in benchmark_folders:
+        # Get base circuit
+        base_circ = QuantumCircuit.from_qasm_file('%s/%s/base_mapping.qasm' % (folder, subfolder))
+        base_counts = qasmsim.run(base_circ, shots=40000).result().get_counts()
+
+        data = {'base counts': base_counts}
+        all_data[subfolder] = data
+        print(subfolder)
+        for cat in ['sabre','foresight_alap','noisy_foresight_alap',\
+                'foresight_asap','noisy_foresight_asap']:
+            counts = defaultdict(int)
+            for _ in range(5):
+                c = res.get_counts(job_index)
+                for x in c:
+                    counts[x] += c[x]
+                job_index += 1
+            base_counts = all_data[subfolder]['base counts']
+            fidelity = get_evaluation_output(base_counts, counts, metric='fidelity')
+            ist = get_evaluation_output(base_counts, counts, metric='ist')
+            print('\t%s: fidelity=%f, ist=%f' % (cat, fidelity, ist))
+
+            all_data[subfolder][cat] = {
+                'counts': counts,
+                'fidelity': fidelity,
+                'ist': ist
+            }
+        data = all_data[subfolder]
+        # Write to pickle.
+        writer = open('%s/%s/counts.pkl' % (folder, subfolder), 'wb')
+        pickle.dump(data, writer)
+        writer.close()
+
 if __name__ == '__main__':
     from sys import argv
 
