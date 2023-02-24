@@ -12,7 +12,6 @@ from qiskit.transpiler.passes import *
 from qiskit.circuit.library import XGate
 
 from fs_noise import *
-from fs_util import G_QISKIT_GATE_SET
 
 import pickle
 

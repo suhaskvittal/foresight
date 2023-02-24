@@ -36,7 +36,9 @@ import pickle
 
 BENCHMARK_PATH = '../benchmarks'
 RUNS=5
-    
+
+### BASE LAYOUT PASS ###
+
 def qiskitopt3_layout_pass(coupling_map, routing_pass=None, do_unroll=True):
     _unroll3q = [
         UnitarySynthesis(
@@ -103,6 +105,8 @@ def qiskitopt3_layout_pass(coupling_map, routing_pass=None, do_unroll=True):
     pm.append(_swap_check)
     return pm
 
+### BENCHMARK GENERATION -- Needed before executing compiler passes on a backend ###
+
 def generate_benchmarks_for_backend(arch_file, backend_name, 
         mapped_circ_name=None, routing_pass=None, reset=False
 ):
@@ -143,6 +147,10 @@ def generate_benchmarks_for_backend(arch_file, backend_name,
         writer.write(mapped_qasm)
         writer.close()
     print('done')
+
+### SENSITIVITY ANALYSIS FOR FORESIGHT ###
+# convergence_analysis: Can 100 iterations of Sabre reach the quality of ForeSight?
+# insertion_analysis: How many steps does ForeSight need to complete execution?
 
 def convergence_analysis(output_file):
     arch_file = '../arch/100grid.arch'
@@ -244,6 +252,11 @@ def insertion_analysis(output_file):
     pickle.dump(data, writer)
     writer.close()
 
+### SENSITIVITY ANALYSIS ###
+# tmsens: Time and Memory analysis on BV-50, BV-100 circuits. Sweep on ForeSight parameters.
+# bvsens: Time and Memory analysis for scalability.
+# gensens: General overhead sensitivity analysis. Sweep on ForeSight parameters. Google Sycamore.
+
 TMSENS = [
     'bv_n50.qasm',
     'bv_n100.qasm'
@@ -307,6 +320,8 @@ def generate_sens_benchmarks(sens_folder, circuits, arch_file,
         writer = open('%s/%s/%s.qasm' % (base_path,qasm_file,mapped_circ_name), 'w')
         writer.write(mapped_qasm)
         writer.close()
+
+### BENCHMARK EXECUTION ###
 
 def benchmark_circuits(folder, arch_file, router_name, routing_func, runs=5, memory=True):
     backend = read_arch_file(arch_file)
@@ -394,6 +409,10 @@ def benchmark_circuits(folder, arch_file, router_name, routing_func, runs=5, mem
         writer.write('time\t%.3f\n' % np.mean(time_array))
         writer.write('memory\t%.3f\n' % np.mean(memory_array))
         writer.close()
+
+### DATA COMPILATION ###
+# Compiles all circuits using O3 after routing.
+# Data is saved within a pickle and a CSV.
 
 BASE_COMPILERS=['sabre','foresight','astar']
 def compile_data(folder, arch_file, csv_file, pickle_file, compilers=BASE_COMPILERS, 
@@ -554,6 +573,8 @@ def merge_noise_sim_pickles(input_folder, output_file):
     pickle.dump(data, writer)
     writer.close()
 
+### Routing Execution Functions. See fs_batchrun for usage. ###
+
 def _sabre_route(circ, arch_file):
     backend = read_arch_file(arch_file)
     compiler = SabreSwap(backend, heuristic='decay')
@@ -586,6 +607,16 @@ def _astar_route(circ, arch_file):
     except Exception as e:
         print(e)
     return output_circ
+
+def _lookahead_route(circ, arch_file):
+    backend = read_arch_file(arch_file)
+    compiler = LookaheadSwap(backend)
+    lookahead_pass = PassManager([
+        TrivialLayout(backend),
+        ApplyLayout(),
+        compiler
+    ])
+    return lookahead_pass.run(circ)
 
 from pytket import Circuit as TketCircuit
 from pytket import OpType
@@ -667,6 +698,8 @@ def _olsq_route(circ, arch_file):
     res, _, _ = solver.solve()
     return QuantumCircuit.from_qasm_str(res)
 
+### MORE DATA COMPILATION ###
+
 DATA_FOLDER_PATH = '../data/'
 DATA_BENCH_PATH = '%s/benchmarks' % DATA_FOLDER_PATH
 DATA_SENS_PATH = '%s/sensitivity' % DATA_FOLDER_PATH
@@ -728,11 +761,14 @@ def compile_all_sensitivity(tmsens=True, bvsens=True, gensens=True, ins=True, co
         solver_input_path = '%s/solver_circuits/ibm_manila' % BENCHMARK_PATH
         solver_csv_path = '%s/solver/csv/solver.csv' % DATA_SENS_PATH
         solver_pkl_path = '%s/solver/solver.pkl' % DATA_SENS_PATH
-        solver_compilers = ['sabre','foresight_alap','foresight_asap','z3solver','bipsolver','olsq']
+        solver_compilers = ['foresight_alap','foresight_asap','sabre',\
+                            'z3solver','bipsolver','olsq','lookahead']
         compile_data(solver_input_path, '../arch/ibm_manila.arch',\
-                solver_csv_path, solver_pkl_path, compilers=solver_compilers, use_O3=True)
+                solver_csv_path, solver_pkl_path, compilers=solver_compilers, use_O3=False)
 
-CMP_CIRCUITS = [
+### TOQM COMPARISION ###
+
+TOQM_CIRCUITS = [
     'cycle10_2_110.qasm',
     'adr4_197.qasm',
     'hwb4_49.qasm',
@@ -741,14 +777,13 @@ CMP_CIRCUITS = [
     '4_49_16.qasm',
     'wim_266.qasm',
     'square_root_7.qasm',
-    'hwb4_49.qasm'
 ]
 
 def compile_for_analytical_model(output_file):
     base_path = '%s/mapped_circuits/google_sycamore' % BENCHMARK_PATH
     backend = read_arch_file('../arch/google_sycamore.arch')
     data = {}
-    for circ_name in CMP_CIRCUITS:
+    for circ_name in TOQM_CIRCUITS:
         base_circ = QuantumCircuit.from_qasm_file(
                 '%s/%s/base_mapping.qsm' % (base_path, circ_name))
         data[circ_name] = {
@@ -784,126 +819,7 @@ def compile_toqm():
 
         compile_data(toqm_input_path, '../arch/%s.arch' % arch_name,
                 toqm_csv_path, toqm_pkl_path, compilers=['sabre', 'foresight', 'toqm'], 
-                use_O3=True, circuits=CMP_CIRCUITS)
-
-def compare_eps_sycamore(compilers, circuits):
-    base_path = '%s/mapped_circuits/google_sycamore' % BENCHMARK_PATH
-    # Noise parameters from Weber (some estimated)
-    G1Q_TIME = 25  # ns
-    CX_TIME = 32
-    MEAS_TIME = 4000
-    T1 = 15000
-    T2 = T1*0.5
-    # Read noise file.
-    reader = open('../arch/noisy/google_weber.noise', 'r')
-    num_qubits = int(reader.readline())
-    g_2q_err = {'cx':{}}
-    g_2q_time = {'cx':{}}
-    g_1q_err = {g:[0 for _ in range(num_qubits)] for g in ['u1', 'u2', 'u3']}
-    g_1q_time = {g:[0 for _ in range(num_qubits)] for g in ['u1', 'u2', 'u3']}
-    prob_m1_g0 = [0 for _ in range(num_qubits)]
-    prob_m0_g1 = [0 for _ in range(num_qubits)]
-    meas_time = [0 for _ in range(num_qubits)]
-    coh_t1 = [0 for _ in range(num_qubits)]
-    coh_t2 = [0 for _ in range(num_qubits)]
-    for _ in range(num_qubits):
-        split_line = reader.readline().split(' ')
-        q, e_1q, pm1g0, pm0g1 = int(split_line[0]), float(split_line[1]),\
-                float(split_line[2]), float(split_line[3])
-        for g in g_1q_err:
-            g_1q_err[g][q] = e_1q
-            g_1q_time[g][q] = G1Q_TIME
-        prob_m1_g0[q] = pm1g0
-        prob_m0_g1[q] = pm0g1
-        meas_time[q] = MEAS_TIME
-        coh_t1[q] = T1
-        coh_t2[q] = T2
-    line = reader.readline()  # now read until the end of the file
-    while line != '':
-        split_line = line.split(' ')
-        q1, q2, e_2q = int(split_line[0]), int(split_line[1]), float(split_line[2])
-        g_2q_err['cx'][(q1,q2)] = e_2q
-        g_2q_err['cx'][(q2,q1)] = e_2q
-        g_2q_time['cx'][(q1,q2)] = CX_TIME
-        g_2q_time['cx'][(q2,q1)] = CX_TIME
-        line = reader.readline()
-    reader.close()
-    # Compute EPS for each circuit
-    backend = read_arch_file('../arch/google_sycamore.arch')
-    for circ_name in circuits:
-        base_circ = QuantumCircuit.from_qasm_file(
-                    '%s/%s/base_mapping.qasm' % (base_path, circ_name))
-        base_cnots = base_circ.count_ops()['cx']
-        print(circ_name)
-        for policy in compilers:
-            circ = QuantumCircuit.from_qasm_file(
-                    '%s/%s/%s_circ.qasm' % (base_path, circ_name, policy))
-            circ = transpile(circ,
-                    basis_gates=G_QISKIT_GATE_SET,
-                    coupling_map=backend,
-                    layout_method='trivial',
-                    routing_method='none',
-                    optimization_level=3)
-            eps = 1.0
-            logeps = 0.0
-            avg_cx_error_rate = 0.0
-            avg_sq_error_rate = 0.0
-            avg_ro_error_rate = 0.0
-            num_cx_gates = 0
-            num_sq_gates = 0
-            num_ro_gates = 0
-            for (ins, qargs, cargs) in circ:
-                if ins.name == 'measure':
-                    q = qargs[0].index
-                    eps *= 1.0 - np.mean([prob_m1_g0[q], prob_m0_g1[q]])
-                    logeps += -np.log(1.0 - np.mean([prob_m1_g0[q], prob_m0_g1[q]]))
-
-                    num_ro_gates += 1
-                    avg_ro_error_rate += np.mean([prob_m1_g0[q], prob_m0_g1[q]])
-                elif len(qargs) == 2:
-                    q0, q1 = qargs[0].index, qargs[1].index
-                    eps *= 1.0 - g_2q_err[ins.name][(q0,q1)]
-                    logeps += -np.log(1.0 - g_2q_err[ins.name][(q0,q1)])
-
-                    num_cx_gates += 1
-                    avg_cx_error_rate += g_2q_err[ins.name][(q0,q1)]
-                else:
-                    q = qargs[0].index
-                    eps *= 1.0 - g_1q_err[ins.name][q]
-                    logeps += -np.log(1.0 - g_1q_err[ins.name][q])
-
-                    num_sq_gates += 1
-                    avg_sq_error_rate += g_1q_err[ins.name][q]
-            if num_ro_gates != 0:
-                avg_ro_error_rate /= num_ro_gates
-            if num_cx_gates != 0:
-                avg_cx_error_rate /= num_cx_gates
-            if num_sq_gates != 0:
-                avg_sq_error_rate /= num_sq_gates
-            time = 0.0
-            # Compute circuit time
-            dag = circuit_to_dag(circ)
-            active = set()
-            for layer in dag.layers():
-                layer_data = layer['graph']
-                max_time = G1Q_TIME
-                for node in layer_data.front_layer():
-                    if len(node.qargs) == 2:
-                        max_time = CX_TIME
-                time += max_time
-                for lst in layer['partition']:
-                    for q in lst:
-                        active.add(q)
-            eps *= np.exp(-time/T1)**len(active)
-            logeps += time/T1 * len(active)
-            print('\tcnots and depth for %s on %s: %d, %d' 
-                    % (policy, circ_name, circ.count_ops()['cx'], circ.depth()))
-            print('\t\tcx overhead: %d' % (circ.count_ops()['cx']-base_cnots))
-            print('\t\tlatency: %d' % time)
-            print('\t\tqubits used: %d' % len(active))
-            print('\t\tEPS: %.3e (%.3e)' % (eps, logeps))
-            print('\t\tMean SQ, CX, RO error rates: %f, %f, %f'\
-                    % (avg_sq_error_rate, avg_cx_error_rate, avg_ro_error_rate))
+                use_O3=True, circuits=TOQM_CIRCUITS)
 
 def compare_eps_general(arch_name, compilers, circuits,
         coh_t1=15000, cxtime=32, sqtime=25, cxerror=0.01, sqerror=0.001, roerror=0.02, use_O3=True):
@@ -919,7 +835,7 @@ def compare_eps_general(arch_name, compilers, circuits,
             circ = QuantumCircuit.from_qasm_file(
                     '%s/%s/%s_circ.qasm' % (base_path, circ_name, policy))
             circ = transpile(circ,
-                    basis_gates=['cx','u1','u2','u3'],
+                    basis_gates=G_QISKIT_GATE_SET,
                     coupling_map=backend,
                     layout_method='trivial',
                     routing_method='none',
@@ -936,10 +852,12 @@ def compare_eps_general(arch_name, compilers, circuits,
             active = set()
             for layer in dag.layers():
                 layer_data = layer['graph']
-                max_time = sqtime
+                max_time = 0
                 for node in layer_data.front_layer():
                     if len(node.qargs) == 2:
                         max_time = cxtime
+                    elif len(node.qargs) == 1 and node.name != 'rz':
+                        max_time = sqtime
                 time += max_time
                 for lst in layer['partition']:
                     for q in lst:
@@ -953,13 +871,18 @@ def compare_eps_general(arch_name, compilers, circuits,
             print('\t\tqubits used: %d' % len(active))
             print('\t\tEPS: %.3e (%.3e)' % (eps, logeps))
 
+### BMT COMPARISON ###
+
 BMT_CIRCUITS = [
     'hwb4_49.qasm',
     'wim_266.qasm',
+    'f2_232.qasm',
     'misex1_241.qasm',
+    'radd_250.qasm',
     'cycle10_2_110.qasm',
     'square_root_7.qasm',
-    'vqe_n8.qasm'
+    'vqe_n8.qasm',
+    'sym9_148.qasm',
 ]
 
 def compare_foresight_bmt():
@@ -1002,6 +925,40 @@ def compute_cnot_dist_stats(arch_name, arch_file):
             circ_dists.append(dist)
         print('\t[%s] dist = %f' % (circ_name, dist))
     print('dist mean: %f, stdev: %f' % (np.mean(circ_dists), np.std(circ_dists)))
+
+### IBMQ LOOKAHEAD ###
+
+LA_CIRCUITS = [
+    '4_49_16.qasm',
+    'hwb4_49.qasm',
+    'square_root_7.qasm',
+    'vqe_n8.qasm',
+    'life_238.qasm'
+]
+
+def benchmark_ibmq_la(folder, arch_file):
+    for circ_name in LA_CIRCUITS:
+        circ = QuantumCircuit.from_qasm_file('%s/%s/base_mapping.qasm' % (folder, circ_name))
+        start = time.time()
+        lookahead_circ = _lookahead_route(circ, arch_file)
+        end = time.time()
+        print('time taken for %s: %f' % (circ_name, (end-start)*1000))
+        writer = open('%s/%s/la_circ.qasm' % (folder, circ_name), 'w')
+        writer.write(lookahead_circ.qasm())
+        writer.close()
+
+def ibmq_la_try_hwb4_49(arch_file):
+    coupling_map = read_arch_file('../arch/ibmq_guadalupe.arch')
+    circ = QuantumCircuit.from_qasm_file('%s/base/hwb4_49.qasm' % BENCHMARK_PATH)
+    start = time.time()
+    t_circ = transpile(circ, coupling_map=coupling_map, optimization_level=3,\
+                        routing_method='lookahead')
+    end = time.time()
+    cnots_added = t_circ.count_ops()['cx'] - circ.count_ops()['cx']
+    print('Time taken: %f' % ((end-start)*1000))
+    print('CNOTS added: %d' % cnots_added)
+
+### OTHER ###
 
 def compute_cnot_dist_all_archs():
     for arch_name in ['ibm_tokyo', 'ibm_toronto', 'google_sycamore', 'rigetti_aspen9']:

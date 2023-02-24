@@ -8,7 +8,7 @@ from qiskit import IBMQ
 from fs_util import read_arch_file, get_error_rates_from_ibmq_backend
 from fs_benchmark import benchmark_circuits
 from fs_benchmark import _sabre_route, _foresight_route, _astar_route,\
-                        _tket_route, _z3_route, _bip_route, _olsq_route
+                        _tket_route, _z3_route, _bip_route, _olsq_route, _lookahead_route
 from fs_foresight import *
 from fs_noise import google_sycamore_noise_model
 
@@ -20,6 +20,7 @@ provider = IBMQ.get_provider(hub='ibm-q-ornl', group='ornl', project='csc440')
 
 IBM_AUCKLAND = read_arch_file('../arch/ibm_auckland.arch')
 IBM_MANILA = read_arch_file('../arch/ibm_manila.arch')
+IBM_JAKARTA = read_arch_file('../arch/ibmq_jakarta.arch')
 IBM_TOKYO = read_arch_file('../arch/ibm_tokyo.arch')
 GOOGLE_SYCAMORE = read_arch_file('../arch/google_weber.arch')
 RIGETTI_ASPEN9 = read_arch_file('../arch/rigetti_aspen9.arch')
@@ -910,7 +911,7 @@ def batch406():
         runs=1
     )
 
-# SOLVER COMPARISION (Z3) VS FORESIGHT AND SABRE
+# SOLVER/EXHAUSTIVE COMPARISION VS FORESIGHT AND SABRE
 
 def batch501():
     foresight_alap = ForeSight(
@@ -959,7 +960,8 @@ def batch504():
         '../benchmarks/solver_circuits/ibm_manila',
         '../arch/ibm_manila.arch',
         'z3solver',
-        _z3_route
+        _z3_route,
+        runs=1
     )
 
 def batch505():
@@ -967,7 +969,8 @@ def batch505():
         '../benchmarks/solver_circuits/ibm_manila',
         '../arch/ibm_manila.arch',
         'bipsolver',
-        _bip_route
+        _bip_route,
+        runs=1
     )
 
 def batch506():
@@ -975,7 +978,70 @@ def batch506():
         '../benchmarks/solver_circuits/ibm_manila',
         '../arch/ibm_manila.arch',
         'olsq',
-        _olsq_route
+        _olsq_route,
+        runs=1
+    )
+
+def batch507():
+    benchmark_circuits(
+        '../benchmarks/solver_circuits/ibm_manila',
+        '../arch/ibm_manila.arch',
+        'lookahead',
+        _lookahead_route,
+        runs=1
+    )
+
+### MOTIVATIONAL DATA
+
+def batch601():
+    foresight_alap = ForeSight(
+        IBM_JAKARTA,
+        slack=2,
+        solution_cap=64,
+        flags=FLAG_ALAP
+    )
+    _foresight_alap = lambda x,y: _foresight_route(x,y,foresight_alap)
+
+    benchmark_circuits(
+        '../benchmarks/motivation_circuits',
+        '../arch/ibmq_jakarta.arch',
+        'foresight_alap',
+        _foresight_alap,
+        runs=1
+    )
+
+def batch602():
+    foresight_asap = ForeSight(
+        IBM_JAKARTA,
+        slack=2,
+        solution_cap=64,
+        flags=FLAG_ASAP
+    )
+    _foresight_asap = lambda x,y: _foresight_route(x,y,foresight_asap)
+
+    benchmark_circuits(
+        '../benchmarks/motivation_circuits',
+        '../arch/ibmq_jakarta.arch',
+        'foresight_asap',
+        _foresight_asap,
+        runs=1
+    )
+
+def batch603():
+    benchmark_circuits(
+        '../benchmarks/motivation_circuits',
+        '../arch/ibmq_jakarta.arch',
+        'sabre',
+        _sabre_route
+    )
+
+def batch604():
+    benchmark_circuits(
+        '../benchmarks/motivation_circuits',
+        '../arch/ibmq_jakarta.arch',
+        'lookahead',
+        _lookahead_route,
+        runs=1
     )
 
 if __name__ == '__main__':

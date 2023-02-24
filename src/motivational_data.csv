@@ -1,0 +1,5 @@
+,original cnots,foresight_asap cnots added,foresight_asap depth,foresight_asap time,foresight_asap memory,foresight_asap cnots added O3,foresight_asap depth O3,sabre cnots added,sabre depth,sabre time,sabre memory,sabre cnots added O3,sabre depth O3,lookahead cnots added,lookahead depth,lookahead time,lookahead memory,lookahead cnots added O3,lookahead depth O3
+mod5adder_127.qasm,239,423,1534,3277.749,91865100.0,319,1326,438,1489,153.122,2355873.4,316,1312,411,1487,13226.811,20340100.8,335,1277
+sf_276.qasm,336,579,2191,2348.68,167096366.0,405,1933,579,2195,219.871,3439658.6,401,1961,576,2107,27081.541,29191678.2,482,1799
+bv_n7.qasm,6,6,70,4.845,25424.0,6,24,6,70,4.447,84270.0,6,24,6,70,52.213,999282.8,6,24
+rd53_133.qasm,252,429,1601,4143.119,50831407.0,329,1395,447,1552,138.535,2414703.2,343,1359,414,1594,15027.518,21199494.8,366,1345
