@@ -18,7 +18,7 @@ import pickle
 import os
 from collections import defaultdict
 
-IBMQ.enable_account('f0f61055f98741e1e793cc5e0dddbb89567e59362c7ec34687938a3fe50cb765d6749943e8e41ed14fe9798c1663adf7bc0cfa6389f272c54765833936e7c713')
+IBMQ.enable_account('bba388441e3661d624059ae058a2abe0c01549019ac02216fa8214150ad7ef4f08c02669caa20882d1f301aa99fab858275072b1eb1a4dabecc7f499361ff461')
 provider = IBMQ.get_provider(hub='ibm-q-ornl', group='ornl', project='csc440')
 qasmsim = Aer.get_backend('qasm_simulator')
 
@@ -73,11 +73,10 @@ def run_circuits_on_device(backend_name, circuits=None, use_dd=False):
                 circ = pm_dd.run(circ)
             curr_index = len(circ_array)
             circuit_to_index[subfolder][cat] = curr_index
-            for _ in range(5):
-                circ_array.append(circ)
+            circ_array.append(circ)
         all_data[subfolder] = data
     # Schedule all the circuits in the array.
-    job_shots = ibmq_backend.configuration().max_shots
+    job_shots = 50000
     job = ibmq_backend.run(circ_array, shots=job_shots)
     res = job.result()
     for subfolder in benchmark_folders:
@@ -86,10 +85,7 @@ def run_circuits_on_device(backend_name, circuits=None, use_dd=False):
                 'foresight_asap','noisy_foresight_asap']:
             job_index = circuit_to_index[subfolder][cat]
             counts = defaultdict(int)
-            for i in range(5):
-                c = res.get_counts(job_index+i)
-                for x in c:
-                    counts[x] += c[x]
+            c = res.get_counts(job_index)
             base_counts = all_data[subfolder]['base counts']
             fidelity = get_evaluation_output(base_counts, counts, metric='fidelity')
             ist = get_evaluation_output(base_counts, counts, metric='ist')
@@ -125,11 +121,9 @@ def data_from_job_id(job_id, backend_name):
         for cat in ['sabre','foresight_alap','noisy_foresight_alap',\
                 'foresight_asap','noisy_foresight_asap']:
             counts = defaultdict(int)
-            for _ in range(5):
-                c = res.get_counts(job_index)
-                for x in c:
-                    counts[x] += c[x]
-                job_index += 1
+            c = res.get_counts(job_index)
+            for x in c:
+                counts[x] += c[x]
             base_counts = all_data[subfolder]['base counts']
             fidelity = get_evaluation_output(base_counts, counts, metric='fidelity')
             ist = get_evaluation_output(base_counts, counts, metric='ist')

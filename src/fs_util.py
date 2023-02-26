@@ -28,6 +28,7 @@ def read_arch_file(arch_file):
 
 # GATE SETS
 G_QISKIT_GATE_SET = ['cx', 'rz', 'sx', 'x', 'id']
+#G_QISKIT_GATE_SET = ['cx', 'u3']
 
 # ALGORITHM PARAMETERS
 G_FORESIGHT_SOLN_CAP = 32
@@ -46,17 +47,26 @@ def get_error_rates_from_ibmq_backend(ibmq_backend):
     for p in coupling_map.physical_qubits:
         error = 0
         for g in G_QISKIT_GATE_SET:
-            if g == 'cx':
+            if g == 'cx' or g == 'ecr':
                 continue
             e = ibmq_backend.properties().gate_error(g, p)
             if e > error:
                 error = e
         sq_error_rates[p] = error
         ro_error_rates[p] = ibmq_backend.properties().readout_error(p)
-        mean_coh_t1 += ibmq_backend.properties().t1(p) * 1e9
+        try:
+            mean_coh_t1 += ibmq_backend.properties().t1(p) * 1e9
+        except:
+            mean_coh_t1 += 0.0
     for edge in coupling_map.get_edges():
-        cx_error_rates[tuple(edge)] = ibmq_backend.properties().gate_error('cx', edge)
-        mean_cx_time += ibmq_backend.properties().gate_length('cx', edge) * 1e9
+        e0, e1  = tuple(edge)
+        try:
+            cx_error_rates[(e0, e1)] = ibmq_backend.properties().gate_error('cx', edge)
+            mean_cx_time += ibmq_backend.properties().gate_length('cx', edge) * 1e9
+        except:
+            cx_error_rates[(e0, e1)] = ibmq_backend.properties().gate_error('ecr', edge)
+            mean_cx_time += ibmq_backend.properties().gate_length('ecr', edge) * 1e9
+        cx_error_rates[(e1, e0)] = cx_error_rates[(e0, e1)]
     mean_coh_t1 /= coupling_map.size()
     mean_cx_time /= len(coupling_map.get_edges())
     return sq_error_rates, cx_error_rates, ro_error_rates, mean_coh_t1, mean_cx_time

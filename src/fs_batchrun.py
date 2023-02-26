@@ -11,8 +11,8 @@ from fs_benchmark import _sabre_route, _foresight_route, _astar_route,\
                         _tket_route, _z3_route, _bip_route, _olsq_route, _lookahead_route
 from fs_foresight import *
 from fs_noise import google_sycamore_noise_model
+from fs_realsys import *
 
-IBMQ.enable_account('f0f61055f98741e1e793cc5e0dddbb89567e59362c7ec34687938a3fe50cb765d6749943e8e41ed14fe9798c1663adf7bc0cfa6389f272c54765833936e7c713')
 provider = IBMQ.get_provider(hub='ibm-q-ornl', group='ornl', project='csc440')
 
 # NOTE: Unless otherwise stated, a compiler will execute for 5 runs.
@@ -28,6 +28,7 @@ IBM_TORONTO = read_arch_file('../arch/ibm_toronto.arch')
 IBM_HANOI = read_arch_file('../arch/ibm_hanoi.arch')
 IBM_MONTREAL = read_arch_file('../arch/ibmq_montreal.arch')
 IBM_KOLKATA = read_arch_file('../arch/ibmq_kolkata.arch')
+IBM_SHERBROOKE = read_arch_file('../arch/ibm_sherbrooke.arch')
 IBM_MUMBAI = read_arch_file('../arch/ibmq_mumbai.arch')
 IBM_HEAVYHEX = read_arch_file('../arch/ibm_3heavyhex.arch')
 GRID100 = read_arch_file('../arch/100grid.arch')
@@ -906,6 +907,90 @@ def batch406():
     benchmark_circuits(
         '../benchmarks/fidelity_tests/ibmq_kolkata',
         '../arch/ibmq_kolkata.arch',
+        'noisy_foresight_asap',
+        _fs2,
+        runs=1
+    )
+
+def batch407():
+    ibmq_backend = provider.get_backend('ibm_sherbrooke')
+    sq_error_rates, cx_error_rates, ro_error_rates, mean_coh_t1, mean_cx_time =\
+        get_error_rates_from_ibmq_backend(ibmq_backend)
+    cx_error_rate_list = [cx_error_rates[c] for c in cx_error_rates]
+    # Compute statistics
+    mean_cx_error_rate = np.mean(cx_error_rate_list)
+    min_cx_error_rate = np.min(cx_error_rate_list)
+    max_cx_error_rate = np.max(cx_error_rate_list)
+
+    # We have found that ALAP ForeSight performs best with delta=mean, ASAP is best with delta=max.
+    foresight_noise_unaware_alap = ForeSight(
+        IBM_SHERBROOKE,
+        slack=1,
+        solution_cap=64,
+        flags=FLAG_ALAP
+    )
+    foresight_noise_aware_alap = ForeSight(
+        IBM_SHERBROOKE,
+        slack=mean_cx_error_rate,
+        solution_cap=64,
+        cx_error_rates=cx_error_rates,
+        sq_error_rates=sq_error_rates,
+        ro_error_rates=ro_error_rates,
+        coh_t1=mean_coh_t1,
+        layer_time=mean_cx_time,
+        flags=FLAG_ALAP|FLAG_NOISE_AWARE
+    )
+    foresight_noise_unaware_asap = ForeSight(
+        IBM_SHERBROOKE,
+        slack=1,
+        solution_cap=64,
+        flags=FLAG_ASAP
+    )
+    foresight_noise_aware_asap = ForeSight(
+        IBM_SHERBROOKE,
+        slack=max_cx_error_rate,
+        solution_cap=64,
+        cx_error_rates=cx_error_rates,
+        sq_error_rates=sq_error_rates,
+        ro_error_rates=ro_error_rates,
+        coh_t1=mean_coh_t1,
+        layer_time=mean_cx_time,
+        flags=FLAG_ASAP|FLAG_NOISE_AWARE
+    )
+    _fs1 = lambda x,y: _foresight_route(x,y,foresight_noise_unaware_alap)
+    _fs2 = lambda x,y: _foresight_route(x,y,foresight_noise_aware_alap)
+    _fs3 = lambda x,y: _foresight_route(x,y,foresight_noise_unaware_asap)
+    _fs4 = lambda x,y: _foresight_route(x,y,foresight_noise_aware_asap)
+    benchmark_circuits(
+        '../benchmarks/fidelity_tests/ibm_sherbrooke',
+        '../arch/ibm_sherbrooke.arch',
+        'sabre',
+        _sabre_route
+    )
+    benchmark_circuits(
+        '../benchmarks/fidelity_tests/ibm_sherbrooke',
+        '../arch/ibm_sherbrooke.arch',
+        'foresight_alap',
+        _fs1,
+        runs=1
+    )
+    benchmark_circuits(
+        '../benchmarks/fidelity_tests/ibm_sherbrooke',
+        '../arch/ibm_sherbrooke.arch',
+        'noisy_foresight_alap',
+        _fs2,
+        runs=1
+    )
+    benchmark_circuits(
+        '../benchmarks/fidelity_tests/ibm_sherbrooke',
+        '../arch/ibm_sherbrooke.arch',
+        'foresight_asap',
+        _fs1,
+        runs=1
+    )
+    benchmark_circuits(
+        '../benchmarks/fidelity_tests/ibm_sherbrooke',
+        '../arch/ibm_sherbrooke.arch',
         'noisy_foresight_asap',
         _fs2,
         runs=1

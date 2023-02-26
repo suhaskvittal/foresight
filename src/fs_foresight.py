@@ -65,8 +65,7 @@ class ForeSight(TransformationPass):
         self.slack = slack
         self.coupling_map = coupling_map        
         if not self.coupling_map.is_symmetric:
-            print('ERROR')
-            exit()
+            self.coupling_map.make_symmetric()
         self.solution_cap = solution_cap
 
         # Runtime data structures

@@ -123,7 +123,7 @@ def generate_benchmarks_for_backend(arch_file, backend_name,
         os.mkdir('%s' % base_path)
 
     benchmark_files = [s for s in os.listdir('%s/base' % BENCHMARK_PATH)\
-                            if s.endswith('.qasm')]
+                            if s.endswith('.qasm') and 'meas' not in s]
     layout_pass_with_unroll = qiskitopt3_layout_pass(coupling_map)
     layout_pass_without_unroll = qiskitopt3_layout_pass(coupling_map, do_unroll=False)
     for qasm_file in benchmark_files:
@@ -288,7 +288,9 @@ NOISEBENCH = [
     'ba_20_1_1.qasm',
     'multiply_n13.qasm',
     'multiplier_n15.qasm',
-    'qpe_n9.qasm'
+    'qpe_n9.qasm',
+    'hwb4_49_meas.qasm',
+    'wim_266_meas.qasm'
 ]
 
 def generate_sens_benchmarks(sens_folder, circuits, arch_file,
@@ -316,10 +318,10 @@ def generate_sens_benchmarks(sens_folder, circuits, arch_file,
         mapped_circ = layout_pass.run(circ)
         if not os.path.exists('%s/%s' % (base_path,qasm_file)):
             os.mkdir('%s/%s' % (base_path,qasm_file))
-        mapped_qasm = mapped_circ.qasm()
-        writer = open('%s/%s/%s.qasm' % (base_path,qasm_file,mapped_circ_name), 'w')
-        writer.write(mapped_qasm)
-        writer.close()
+            mapped_qasm = mapped_circ.qasm()
+            writer = open('%s/%s/%s.qasm' % (base_path,qasm_file,mapped_circ_name), 'w')
+            writer.write(mapped_qasm)
+            writer.close()
 
 ### BENCHMARK EXECUTION ###
 
